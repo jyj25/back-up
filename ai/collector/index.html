@@ -377,7 +377,13 @@
     shots = await dbAll();
     $('streamUrl').value = load('streamUrl', '');
     render();
-    setMode('webcam');
+    // 보드(192.168.4.1)가 이 페이지를 직접 서비스하면 스트림에 자동 연결
+    if (location.protocol === 'http:' && location.hostname === '192.168.4.1') {
+      $('src').value = 'stream';
+      $('streamUrl').value = 'http://192.168.4.1:81/stream';
+      setMode('stream');
+      startStream();
+    } else setMode('webcam');
   })();
 })();
 </script>

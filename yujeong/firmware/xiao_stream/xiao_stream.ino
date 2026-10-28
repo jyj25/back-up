@@ -1,10 +1,12 @@
 // XIAO ESP32S3 Sense: 카메라 MJPEG 스트림 (사진 수집기용)
-// 보드가 Wi-Fi AP 를 만들고, 노트북이 여기에 접속해서 http://192.168.4.1:81/stream 을 본다.
-//   /stream   MJPEG 스트림
+// 보드가 Wi-Fi AP 를 만들고, 노트북이 여기에 접속해서 http://192.168.4.1/ 을 열면 수집 대시보드가 뜬다.
+//   :80 /          사진 수집 대시보드 (ai/collector, gen_assets.py 로 내장)
+//   :81 /stream   MJPEG 스트림
 //   /capture  JPEG 한 장
 #include "esp_camera.h"
 #include "esp_http_server.h"
 #include <WiFi.h>
+#include "web_assets.h"
 
 const char* AP_SSID = "XIAO_ESP32S3_Sense";
 const char* AP_PASS = "seeedstudio";
@@ -53,6 +55,14 @@ static esp_err_t capture_handler(httpd_req_t* req) {
   return res;
 }
 
+static esp_err_t send_gz(httpd_req_t* req, const char* type, const uint8_t* d, unsigned len) {
+  httpd_resp_set_type(req, type);
+  httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+  return httpd_resp_send(req, (const char*)d, len);
+}
+static esp_err_t index_handler(httpd_req_t* req) { return send_gz(req, "text/html; charset=utf-8", INDEX_HTML, INDEX_HTML_LEN); }
+static esp_err_t jszip_handler(httpd_req_t* req) { return send_gz(req, "application/javascript", JSZIP_JS, JSZIP_JS_LEN); }
+
 void setup() {
   Serial.begin(115200);
   delay(500);
@@ -86,6 +96,7 @@ void setup() {
   WiFi.softAP(AP_SSID, AP_PASS);
   Serial.printf("AP: %s / %s\n", AP_SSID, AP_PASS);
 
+  // 스트림은 연결을 오래 점유하므로 페이지(80)와 별도 서버(81)로 분리
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 81;
   cfg.ctrl_port = 32769;
@@ -95,8 +106,19 @@ void setup() {
   if (httpd_start(&h, &cfg) == ESP_OK) {
     httpd_register_uri_handler(h, &stream);
     httpd_register_uri_handler(h, &capture);
-    Serial.printf("스트림: http://%s:81/stream\n", WiFi.softAPIP().toString().c_str());
   }
+
+  httpd_config_t pcfg = HTTPD_DEFAULT_CONFIG();
+  pcfg.max_uri_handlers = 4;
+  httpd_uri_t idx = {"/", HTTP_GET, index_handler, NULL};
+  httpd_uri_t jszip = {"/jszip.min.js", HTTP_GET, jszip_handler, NULL};
+  httpd_handle_t ph = NULL;
+  if (httpd_start(&ph, &pcfg) == ESP_OK) {
+    httpd_register_uri_handler(ph, &idx);
+    httpd_register_uri_handler(ph, &jszip);
+  }
+  Serial.printf("대시보드: http://%s/  스트림: http://%s:81/stream\n",
+                WiFi.softAPIP().toString().c_str(), WiFi.softAPIP().toString().c_str());
 }
 
 void loop() {

@@ -1,0 +1,27 @@
+:root { --bg: #f4f5f7; --card: #fff; --text: #1c1f24; --muted: #6b7280; --border: #e3e5e9; --accent: #2563eb; --bad: #dc2626; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111317; --card: #1a1d23; --text: #e8eaed; --muted: #9aa0a8; --border: #2a2e36; --accent: #60a5fa; --bad: #f87171; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Malgun Gothic", sans-serif; }
+header { display: flex; justify-content: space-between; align-items: center; max-width: 980px; margin: 0 auto; padding: 14px 16px 0; }
+h1 { margin: 0; font-size: 20px; }
+.badge { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; }
+.badge.fake { color: #d97706; border-color: #d97706; }
+.badge.real { color: #16a34a; border-color: #16a34a; }
+main { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; max-width: 980px; margin: 0 auto; padding: 14px 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: grid; gap: 12px; align-content: start; }
+.cam { position: relative; aspect-ratio: 4 / 3; background: #0b0d10; border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
+.cam img { width: 100%; height: 100%; object-fit: contain; }
+#cam-msg { position: absolute; color: #9aa0a8; }
+.readout { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); }
+.readout b { color: var(--text); font-variant-numeric: tabular-nums; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pad button { height: 64px; font-size: 22px; touch-action: none; user-select: none; }
+.pad button small { font-size: 11px; display: block; }
+button, select { font: inherit; color: inherit; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 8px 12px; cursor: pointer; }
+button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.stop { background: var(--bad); color: #fff; border-color: var(--bad); }
+label { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.row { display: flex; gap: 8px; }
+.hint { margin: 0; font-size: 12px; color: var(--muted); }

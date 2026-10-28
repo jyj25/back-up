@@ -1,0 +1,6 @@
+fastapi[standard]>=0.115
+pytest>=8
+# 라즈베리파이에서만 (I2C 하드웨어 필요):
+#   raspbot>=0.1.2      pip install raspbot
+#   picamera2           sudo apt install python3-picamera2 (venv 는 --system-site-packages 로)
+#   opencv-python-headless  USB 웹캠(C270) 을 쓸 때

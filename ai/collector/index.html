@@ -68,10 +68,15 @@
       <h2>카메라</h2>
       <div class="row">
         <select id="src">
+          <option value="usb">ESP32 USB 케이블 (Wi-Fi 전환 불필요)</option>
           <option value="webcam">노트북 웹캠</option>
           <option value="stream">ESP32 스트림 URL</option>
         </select>
         <select id="camSel" title="카메라 선택"></select>
+      </div>
+      <div class="row" id="usbRow" hidden>
+        <button id="usbBtn" class="primary">🔌 보드 연결</button>
+        <span class="mute">Chrome/Edge · 목록에서 XIAO(USB 직렬 장치) 선택</span>
       </div>
       <div class="row" id="streamRow" hidden>
         <input type="text" id="streamUrl" placeholder="http://192.168.x.x:81/stream">
@@ -203,13 +208,96 @@
     stream.src = url;
     setStatus('연결 중…');
   }
+  // ---- USB (Web Serial): 'C' 를 보내면 [AA 55 AA 55][길이 u32 LE][JPEG] 한 장이 온다 ----
+  let usbPort = null, usbWriter = null, usbReader = null, usbRun = false, rx = new Uint8Array(0), waiter = null, lastBlobUrl = null;
+  const MAGIC = [0xAA, 0x55, 0xAA, 0x55];
+  function findMagic(b) {
+    for (let i = 0; i + 4 <= b.length; i++) if (b[i] === 0xAA && b[i + 1] === 0x55 && b[i + 2] === 0xAA && b[i + 3] === 0x55) return i;
+    return -1;
+  }
+  function parseRx() {
+    for (;;) {
+      const i = findMagic(rx);
+      if (i < 0) { rx = rx.slice(Math.max(0, rx.length - 3)); return; }
+      if (i > 0) rx = rx.slice(i);
+      if (rx.length < 8) return;
+      const len = new DataView(rx.buffer, rx.byteOffset).getUint32(4, true);
+      if (len > 1000000) { rx = rx.slice(1); continue; }
+      if (rx.length < 8 + len) return;
+      const frame = rx.slice(8, 8 + len); rx = rx.slice(8 + len);
+      if (waiter) { const w = waiter; waiter = null; w(frame); }
+    }
+  }
+  async function usbReadLoop(reader) {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const n = new Uint8Array(rx.length + value.length); n.set(rx); n.set(value, rx.length); rx = n;
+        parseRx();
+      }
+    } catch {} finally { try { reader.releaseLock(); } catch {} }
+  }
+  function requestFrame() {
+    return new Promise(res => {
+      const t = setTimeout(() => { if (waiter === done) waiter = null; res(null); }, 2000);
+      const done = f => { clearTimeout(t); res(f); };
+      waiter = done;
+      usbWriter.write(new Uint8Array([67])).catch(() => { clearTimeout(t); waiter = null; res(null); });
+    });
+  }
+  async function usbPump() {
+    usbRun = true;
+    let fails = 0;
+    while (usbRun) {
+      const f = await requestFrame();
+      if (!usbRun) break;
+      if (!f) { if (++fails > 2) setStatus('보드 응답 없음 (케이블/다른 프로그램의 COM 점유 확인)'); await new Promise(r => setTimeout(r, 500)); continue; }
+      fails = 0;
+      const u = URL.createObjectURL(new Blob([f], { type: 'image/jpeg' }));
+      await new Promise(r => { stream.onload = stream.onerror = r; stream.src = u; });
+      if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
+      lastBlobUrl = u;
+      setStatus('ESP32 USB 연결됨');
+      await new Promise(r => setTimeout(r, 20));
+    }
+  }
+  async function usbStop() {
+    usbRun = false;
+    try { if (usbReader) await usbReader.cancel(); } catch {}
+    try { if (usbWriter) usbWriter.releaseLock(); } catch {}
+    try { if (usbPort) await usbPort.close(); } catch {}
+    usbPort = usbWriter = usbReader = null;
+  }
+  async function usbConnect() {
+    if (!navigator.serial) return setStatus('이 브라우저는 USB 연결 미지원 (Chrome/Edge 사용)');
+    try {
+      await usbStop();
+      usbPort = await navigator.serial.requestPort();
+      await usbPort.open({ baudRate: 115200 });
+      usbWriter = usbPort.writable.getWriter();
+      usbReader = usbPort.readable.getReader();
+      rx = new Uint8Array(0);
+      usbReadLoop(usbReader);
+      setStatus('연결 중…');
+      usbPump();
+    } catch (e) { setStatus('USB 연결 실패: ' + e.message); }
+  }
+
   function setMode(m) {
     mode = m;
     const web = m === 'webcam';
+    if (m !== 'usb') usbStop();
     video.hidden = !web; stream.hidden = web;
-    $('streamRow').hidden = web; $('camSel').hidden = !web;
+    $('usbRow').hidden = m !== 'usb';
+    $('streamRow').hidden = m !== 'stream'; $('camSel').hidden = !web;
     if (web) { stream.removeAttribute('src'); startWebcam(); }
-    else { if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; setStatus('URL 입력 후 연결'); }
+    else {
+      if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+      if (m === 'usb') stream.removeAttribute('src');
+      setStatus(m === 'usb' ? '‘보드 연결’ 을 누르세요' : 'URL 입력 후 연결');
+    }
   }
   function setStatus(t) { $('status').textContent = t; }
 
@@ -360,6 +448,7 @@
   $('src').onchange = e => setMode(e.target.value);
   $('camSel').onchange = startWebcam;
   $('connect').onclick = startStream;
+  $('usbBtn').onclick = usbConnect;
   $('streamUrl').onkeydown = e => { if (e.key === 'Enter') startStream(); e.stopPropagation(); };
   document.addEventListener('keydown', e => {
     if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
@@ -372,19 +461,19 @@
   function render() { renderClasses(); renderGrid(); }
 
   // ---------- 시작 ----------
-  (async () => {
-    await dbReady;
-    shots = await dbAll();
-    $('streamUrl').value = load('streamUrl', '');
-    render();
-    // 보드(192.168.4.1)가 이 페이지를 직접 서비스하면 스트림에 자동 연결
-    if (location.protocol === 'http:' && location.hostname === '192.168.4.1') {
-      $('src').value = 'stream';
-      $('streamUrl').value = 'http://192.168.4.1:81/stream';
-      setMode('stream');
-      startStream();
-    } else setMode('webcam');
-  })();
+  // 카메라는 저장소(IndexedDB) 준비와 무관하게 먼저 시작한다
+  $('streamUrl').value = load('streamUrl', '');
+  render();
+  // 보드(192.168.4.1)가 이 페이지를 직접 서비스하면 스트림에 자동 연결
+  if (location.protocol === 'http:' && location.hostname === '192.168.4.1') {
+    $('src').value = 'stream';
+    $('streamUrl').value = 'http://192.168.4.1:81/stream';
+    setMode('stream');
+    startStream();
+  } else if (navigator.serial) { $('src').value = 'usb'; setMode('usb'); }
+  else setMode('webcam');
+  dbReady.then(async () => { shots = await dbAll(); render(); })
+    .catch(() => setStatus('사진 저장소(IndexedDB)를 열 수 없음 — 시크릿 모드가 아닌지 확인'));
 })();
 </script>
 </body>

@@ -65,6 +65,7 @@ static esp_err_t jszip_handler(httpd_req_t* req) { return send_gz(req, "applicat
 
 void setup() {
   Serial.begin(115200);
+  Serial.setTxTimeoutMs(1000);  // 호스트가 읽는 동안 프레임이 잘리지 않게
   delay(500);
 
   camera_config_t c = {};
@@ -121,6 +122,22 @@ void setup() {
                 WiFi.softAPIP().toString().c_str(), WiFi.softAPIP().toString().c_str());
 }
 
+// USB 시리얼 모드: 'C' 한 글자를 받으면 JPEG 한 장을 [AA 55 AA 55][길이 u32 LE][JPEG] 로 보낸다.
+// 브라우저(Web Serial)에서 Wi-Fi 전환 없이 USB 만으로 수집할 때 쓴다.
 void loop() {
-  delay(10000);
+  if (Serial.available()) {
+    int ch = Serial.read();
+    if (ch == 'C') {
+      camera_fb_t* fb = esp_camera_fb_get();
+      if (fb) {
+        const uint8_t head[8] = {0xAA, 0x55, 0xAA, 0x55,
+                                 (uint8_t)fb->len, (uint8_t)(fb->len >> 8), (uint8_t)(fb->len >> 16), (uint8_t)(fb->len >> 24)};
+        Serial.write(head, 8);
+        Serial.write(fb->buf, fb->len);
+        esp_camera_fb_return(fb);
+      }
+    }
+  } else {
+    delay(2);
+  }
 }

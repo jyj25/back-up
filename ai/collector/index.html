@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>사진 수집기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --mute:#6b7480; --line:#dde1e6; --acc:#2563eb; --danger:#dc2626; --ok:#16a34a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171b; --card:#1d2126; --fg:#e8eaed; --mute:#98a1ac; --line:#2e343b; --acc:#60a5fa; --danger:#f87171; --ok:#4ade80; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,"Malgun Gothic",sans-serif; }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; }
+  header span { color:var(--mute); }
+  main { display:grid; grid-template-columns:minmax(300px,420px) 1fr; gap:16px; padding:16px; align-items:start; }
+  @media (max-width:800px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:16px; }
+  .card h2 { font-size:13px; margin:0 0 8px; color:var(--mute); font-weight:600; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  .row:last-child { margin-bottom:0; }
+  button, select, input { font:inherit; color:var(--fg); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; }
+  button.danger { color:var(--danger); }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=number] { width:70px; }
+  input[type=text] { flex:1; min-width:120px; }
+  #stage { position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio:4/3; }
+  #stage video, #stage img { width:100%; height:100%; object-fit:contain; display:block; }
+  #guide { position:absolute; inset:0; pointer-events:none; display:flex; align-items:center; justify-content:center; }
+  #guide div { height:100%; aspect-ratio:1; border:2px dashed rgba(255,255,255,.7); }
+  #flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity .25s; }
+  #status { position:absolute; left:8px; top:8px; background:rgba(0,0,0,.6); color:#fff; padding:2px 8px; border-radius:6px; font-size:12px; }
+  .classes { display:flex; flex-direction:column; gap:6px; }
+  .cls { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
+  .cls.on { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc); }
+  .cls .key { color:var(--mute); width:14px; text-align:center; }
+  .cls .name { font-weight:600; min-width:60px; }
+  .cls .bar { flex:1; height:6px; background:var(--line); border-radius:3px; overflow:hidden; }
+  .cls .bar i { display:block; height:100%; background:var(--acc); }
+  .cls .bar i.ok { background:var(--ok); }
+  .cls .n { color:var(--mute); width:60px; text-align:right; font-variant-numeric:tabular-nums; }
+  .cls button { padding:2px 8px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:8px; }
+  .th { position:relative; aspect-ratio:1; border-radius:6px; overflow:hidden; border:2px solid transparent; background:#000; cursor:pointer; }
+  .th.sel { border-color:var(--acc); }
+  .th img { width:100%; height:100%; object-fit:cover; display:block; }
+  .th .x { position:absolute; right:3px; top:3px; padding:0 6px; line-height:20px; background:rgba(0,0,0,.65); color:#fff; border:0; border-radius:4px; opacity:0; }
+  .th:hover .x { opacity:1; }
+  .th .tag { position:absolute; left:3px; bottom:3px; font-size:11px; background:rgba(0,0,0,.65); color:#fff; padding:0 5px; border-radius:4px; }
+  .mute { color:var(--mute); }
+  kbd { border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>사진 수집기</h1>
+  <span>Edge Impulse 학습용 · 정사각형 중앙 크롭 · 파일명 <code>클래스.시간.jpg</code> (업로드 시 라벨 자동 인식)</span>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>카메라</h2>
+      <div class="row">
+        <select id="src">
+          <option value="webcam">노트북 웹캠</option>
+          <option value="stream">ESP32 스트림 URL</option>
+        </select>
+        <select id="camSel" title="카메라 선택"></select>
+      </div>
+      <div class="row" id="streamRow" hidden>
+        <input type="text" id="streamUrl" placeholder="http://192.168.x.x:81/stream">
+        <button id="connect">연결</button>
+      </div>
+      <div id="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <img id="stream" alt="" hidden crossorigin="anonymous">
+        <div id="guide"><div></div></div>
+        <div id="flash"></div>
+        <div id="status">카메라 없음</div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label>저장 크기
+          <select id="size"><option>96</option><option>160</option><option selected>240</option></select>
+        </label>
+        <span class="mute">점선 = 저장되는 영역</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>촬영</h2>
+      <div class="row">
+        <button class="primary" id="shot">📷 찍기 (<kbd>Space</kbd>)</button>
+        <span class="mute">저장 클래스: <b id="curName">-</b></span>
+      </div>
+      <div class="row">
+        <label>연속 <input type="number" id="burstN" value="20" min="2" max="500">장</label>
+        <label>간격 <input type="number" id="burstMs" value="300" min="50" step="50">ms</label>
+        <button id="burst">연속 촬영 (<kbd>B</kbd>)</button>
+      </div>
+      <div class="row">
+        <label>시작 전 <input type="number" id="delay" value="3" min="0" max="10">초 대기</label>
+        <span class="mute">(물건 올릴 시간)</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>클래스 (숫자키 1~9로 선택)</h2>
+      <div class="classes" id="classes"></div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="newCls" placeholder="새 클래스 (영문 소문자, 예: can)">
+        <button id="addCls">추가</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>사진 목록</h2>
+      <div class="row">
+        <select id="filter"></select>
+        <button id="selAll">전체 선택</button>
+        <button id="selNone">선택 해제</button>
+        <button id="delSel" class="danger">선택 삭제</button>
+        <button id="undo">방금 찍은 것 취소 (<kbd>Z</kbd>)</button>
+      </div>
+      <div class="row">
+        <button id="dlCls">현재 필터 ZIP 받기</button>
+        <button id="dlAll">전체 ZIP 받기 (클래스별 폴더)</button>
+        <span class="mute" id="total"></span>
+      </div>
+      <div id="grid"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const DEFAULT_CLASSES = ['can', 'pet', 'paper', 'empty'];
+  const TARGET = 50;
+
+  // ---------- 저장소 (IndexedDB) ----------
+  let db;
+  const dbReady = new Promise((res, rej) => {
+    const r = indexedDB.open('collector', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('shots', { keyPath: 'id', autoIncrement: true });
+    r.onsuccess = () => { db = r.result; res(); };
+    r.onerror = () => rej(r.error);
+  });
+  const tx = (mode, fn) => new Promise((res, rej) => {
+    const t = db.transaction('shots', mode);
+    const out = fn(t.objectStore('shots'));
+    t.oncomplete = () => res(out && out.result);
+    t.onerror = () => rej(t.error);
+  });
+  const dbAll = () => tx('readonly', s => s.getAll());
+  const dbAdd = rec => tx('readwrite', s => s.add(rec));
+  const dbDel = ids => tx('readwrite', s => ids.forEach(id => s.delete(id)));
+
+  // ---------- 상태 ----------
+  let classes = load('classes', DEFAULT_CLASSES);
+  let current = classes[0];
+  let shots = [];              // {id, cls, ts, blob}
+  let selected = new Set();
+  let lastShotIds = [];
+  let burstTimer = null;
+  let urls = [];
+
+  function load(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } }
+  function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+
+  // ---------- 카메라 ----------
+  const video = $('video'), stream = $('stream');
+  let mode = 'webcam';
+
+  async function listCams() {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    $('camSel').innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || '카메라 ' + (i + 1)}</option>`).join('');
+  }
+  async function startWebcam() {
+    try {
+      if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+      const id = $('camSel').value;
+      video.srcObject = await navigator.mediaDevices.getUserMedia({
+        video: id ? { deviceId: { exact: id }, width: { ideal: 1280 } } : { width: { ideal: 1280 } }, audio: false });
+      await listCams();
+      if (id) $('camSel').value = id;
+      setStatus('웹캠 연결됨');
+    } catch (e) { setStatus('웹캠 실패: ' + e.message); }
+  }
+  function startStream() {
+    const url = $('streamUrl').value.trim();
+    if (!url) return setStatus('URL을 입력하세요');
+    save('streamUrl', url);
+    stream.onload = () => setStatus('ESP32 스트림 연결됨');
+    stream.onerror = () => setStatus('스트림 연결 실패');
+    stream.src = url;
+    setStatus('연결 중…');
+  }
+  function setMode(m) {
+    mode = m;
+    const web = m === 'webcam';
+    video.hidden = !web; stream.hidden = web;
+    $('streamRow').hidden = web; $('camSel').hidden = !web;
+    if (web) { stream.removeAttribute('src'); startWebcam(); }
+    else { if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; setStatus('URL 입력 후 연결'); }
+  }
+  function setStatus(t) { $('status').textContent = t; }
+
+  const srcEl = () => mode === 'webcam' ? video : stream;
+  function srcSize() { const e = srcEl(); return mode === 'webcam' ? [e.videoWidth, e.videoHeight] : [e.naturalWidth, e.naturalHeight]; }
+
+  // 중앙 정사각형 크롭 → size×size JPEG
+  function grab() {
+    const [w, h] = srcSize();
+    if (!w || !h) return Promise.resolve(null);
+    const size = +$('size').value, s = Math.min(w, h);
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    try {
+      c.getContext('2d').drawImage(srcEl(), (w - s) / 2, (h - s) / 2, s, s, 0, 0, size, size);
+    } catch { setStatus('캔버스 접근 불가 (CORS)'); return Promise.resolve(null); }
+    return new Promise(res => { try { c.toBlob(res, 'image/jpeg', 0.92); } catch { res(null); } });
+  }
+
+  async function shoot() {
+    const blob = await grab();
+    if (!blob) { setStatus('찍을 수 없음: 카메라 확인'); return false; }
+    const rec = { cls: current, ts: Date.now(), blob };
+    rec.id = await dbAdd(rec);
+    shots.push(rec); lastShotIds.push(rec.id);
+    const f = $('flash'); f.style.opacity = .6; setTimeout(() => f.style.opacity = 0, 80);
+    render();
+    return true;
+  }
+
+  // ---------- 연속 촬영 ----------
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function stopBurst(msg) {
+    burstTimer = null;
+    $('burst').textContent = '연속 촬영 (B)';
+    $('shot').disabled = false;
+    if (msg) setStatus(msg);
+  }
+  async function startBurst() {
+    if (burstTimer) { burstTimer = null; return; }   // 실행 중이면 중지 요청
+    const n = Math.max(2, +$('burstN').value || 20), ms = Math.max(50, +$('burstMs').value || 300);
+    const token = burstTimer = {};
+    $('burst').textContent = '■ 중지 (B)';
+    $('shot').disabled = true;
+    lastShotIds = [];
+    for (let w = Math.max(0, +$('delay').value || 0); w > 0 && burstTimer === token; w--) {
+      setStatus(`${w}초 후 시작…`); await sleep(1000);
+    }
+    let done = 0;
+    while (burstTimer === token && done < n) {
+      if (!(await shoot())) return stopBurst('실패로 중지');
+      setStatus(`${current}: ${++done}/${n}`);
+      await sleep(ms);
+    }
+    if (burstTimer === token) stopBurst(`완료: ${done}장`); else stopBurst(`중지됨: ${done}장`);
+  }
+
+  // ---------- 클래스 ----------
+  const count = c => shots.filter(s => s.cls === c).length;
+
+  function renderClasses() {
+    $('curName').textContent = current || '-';
+    $('classes').innerHTML = classes.map((c, i) => {
+      const n = count(c), pct = Math.min(100, n / TARGET * 100);
+      return `<div class="cls ${c === current ? 'on' : ''}" data-c="${c}">
+        <span class="key">${i < 9 ? i + 1 : ''}</span><span class="name">${c}</span>
+        <span class="bar"><i class="${n >= TARGET ? 'ok' : ''}" style="width:${pct}%"></i></span>
+        <span class="n">${n} / ${TARGET}</span>
+        <button data-rm="${c}" title="클래스 삭제(사진 포함)">✕</button></div>`;
+    }).join('');
+    const f = $('filter'), old = f.value;
+    f.innerHTML = '<option value="">전체</option>' + classes.map(c => `<option>${c}</option>`).join('');
+    f.value = classes.includes(old) ? old : '';
+  }
+
+  $('classes').onclick = async e => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) {
+      const c = rm.dataset.rm;
+      if (!confirm(`'${c}' 클래스와 사진 ${count(c)}장을 삭제할까요?`)) return;
+      await dbDel(shots.filter(s => s.cls === c).map(s => s.id));
+      shots = shots.filter(s => s.cls !== c);
+      classes = classes.filter(x => x !== c); save('classes', classes);
+      if (current === c) current = classes[0];
+      return render();
+    }
+    const el = e.target.closest('.cls');
+    if (el) { current = el.dataset.c; render(); }
+  };
+  $('addCls').onclick = () => {
+    const c = $('newCls').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!c) return alert('영문 소문자/숫자/_/- 만 쓸 수 있어요 (파일명 라벨로 쓰입니다)');
+    if (classes.includes(c)) return;
+    classes.push(c); save('classes', classes); current = c; $('newCls').value = ''; render();
+  };
+  $('newCls').onkeydown = e => { if (e.key === 'Enter') $('addCls').click(); e.stopPropagation(); };
+
+  // ---------- 갤러리 ----------
+  function renderGrid() {
+    urls.forEach(URL.revokeObjectURL); urls = [];
+    const f = $('filter').value;
+    const list = shots.filter(s => !f || s.cls === f).sort((a, b) => b.ts - a.ts);
+    $('grid').innerHTML = list.map(s => {
+      const u = URL.createObjectURL(s.blob); urls.push(u);
+      return `<div class="th ${selected.has(s.id) ? 'sel' : ''}" data-id="${s.id}">
+        <img src="${u}" alt=""><span class="tag">${s.cls}</span><button class="x" data-del="${s.id}">✕</button></div>`;
+    }).join('') || '<span class="mute">사진이 없습니다</span>';
+    const kb = Math.round(shots.reduce((a, s) => a + s.blob.size, 0) / 1024);
+    $('total').textContent = `총 ${shots.length}장 · ${kb}KB · 표시 ${list.length}장 · 선택 ${selected.size}장`;
+  }
+  $('grid').onclick = async e => {
+    const d = e.target.closest('[data-del]');
+    if (d) { await removeIds([+d.dataset.del]); return; }
+    const t = e.target.closest('.th');
+    if (t) { const id = +t.dataset.id; selected.has(id) ? selected.delete(id) : selected.add(id); renderGrid(); }
+  };
+  async function removeIds(ids) {
+    await dbDel(ids);
+    const set = new Set(ids);
+    shots = shots.filter(s => !set.has(s.id));
+    ids.forEach(i => selected.delete(i));
+    lastShotIds = lastShotIds.filter(i => !set.has(i));
+    render();
+  }
+  $('filter').onchange = renderGrid;
+  $('selAll').onclick = () => { const f = $('filter').value; shots.filter(s => !f || s.cls === f).forEach(s => selected.add(s.id)); renderGrid(); };
+  $('selNone').onclick = () => { selected.clear(); renderGrid(); };
+  $('delSel').onclick = () => { if (selected.size && confirm(`선택한 ${selected.size}장을 삭제할까요?`)) removeIds([...selected]); };
+  $('undo').onclick = () => { if (lastShotIds.length) removeIds(burstTimer ? [] : lastShotIds.splice(0)); };
+
+  // ---------- 다운로드 ----------
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = t => { const d = new Date(t); return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${String(t % 1000).padStart(3, '0')}`; };
+  async function zip(list, name) {
+    if (!list.length) return alert('받을 사진이 없습니다');
+    if (!window.JSZip) return alert('JSZip 을 불러오지 못했어요 (인터넷 연결 확인)');
+    const z = new JSZip();
+    list.forEach(s => z.folder(s.cls).file(`${s.cls}.${stamp(s.ts)}-${s.id}.jpg`, s.blob));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await z.generateAsync({ type: 'blob' }));
+    a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  $('dlCls').onclick = () => { const f = $('filter').value; zip(shots.filter(s => !f || s.cls === f), `${f || 'all'}.zip`); };
+  $('dlAll').onclick = () => zip(shots, 'dataset.zip');
+
+  // ---------- 이벤트 ----------
+  $('shot').onclick = shoot;
+  $('burst').onclick = startBurst;
+  $('src').onchange = e => setMode(e.target.value);
+  $('camSel').onchange = startWebcam;
+  $('connect').onclick = startStream;
+  $('streamUrl').onkeydown = e => { if (e.key === 'Enter') startStream(); e.stopPropagation(); };
+  document.addEventListener('keydown', e => {
+    if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); if (!burstTimer) shoot(); }
+    else if (e.key === 'b' || e.key === 'B') startBurst();
+    else if (e.key === 'z' || e.key === 'Z') $('undo').click();
+    else if (/^[1-9]$/.test(e.key) && classes[+e.key - 1]) { current = classes[+e.key - 1]; render(); }
+  });
+
+  function render() { renderClasses(); renderGrid(); }
+
+  // ---------- 시작 ----------
+  (async () => {
+    await dbReady;
+    shots = await dbAll();
+    $('streamUrl').value = load('streamUrl', '');
+    render();
+    setMode('webcam');
+  })();
+})();
+</script>
+</body>
+</html>

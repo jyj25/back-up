@@ -11,6 +11,7 @@
     :root { --bg:#14171b; --card:#1d2126; --fg:#e8eaed; --mute:#98a1ac; --line:#2e343b; --acc:#60a5fa; --danger:#f87171; --ok:#4ade80; }
   }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,"Malgun Gothic",sans-serif; }
   header { padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
   h1 { font-size:16px; margin:0; }
@@ -84,7 +85,7 @@
       </div>
       <div id="stage">
         <video id="video" autoplay playsinline muted></video>
-        <img id="stream" alt="" hidden crossorigin="anonymous">
+        <img id="stream" alt="" hidden>
         <div id="guide"><div></div></div>
         <div id="flash"></div>
         <div id="status">카메라 없음</div>
@@ -203,6 +204,7 @@
     const url = $('streamUrl').value.trim();
     if (!url) return setStatus('URL을 입력하세요');
     save('streamUrl', url);
+    stream.crossOrigin = 'anonymous';   // 다른 출처(보드) 스트림은 캔버스 캡처를 위해 CORS 필요
     stream.onload = () => setStatus('ESP32 스트림 연결됨');
     stream.onerror = () => setStatus('스트림 연결 실패');
     stream.src = url;
@@ -255,10 +257,11 @@
       if (!f) { if (++fails > 2) setStatus('보드 응답 없음 (케이블/다른 프로그램의 COM 점유 확인)'); await new Promise(r => setTimeout(r, 500)); continue; }
       fails = 0;
       const u = URL.createObjectURL(new Blob([f], { type: 'image/jpeg' }));
+      stream.removeAttribute('crossorigin');
       await new Promise(r => { stream.onload = stream.onerror = r; stream.src = u; });
       if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
       lastBlobUrl = u;
-      setStatus('ESP32 USB 연결됨');
+      setStatus(stream.naturalWidth ? `ESP32 USB 연결됨 (${stream.naturalWidth}×${stream.naturalHeight})` : '프레임은 받았지만 이미지 해석 실패');
       await new Promise(r => setTimeout(r, 20));
     }
   }

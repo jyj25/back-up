@@ -65,7 +65,7 @@ async function poll() {
     const s = await api('GET', '/api/status');
     $('mode').textContent = s.mode === 'real' ? '실제 로봇' : '가짜 모드';
     $('mode').className = `badge ${s.mode}`;
-    $('moving').textContent = s.moving ?? '정지';
+    $('moving').textContent = s.blocked ? '장애물 정지' : (s.moving ?? '정지');
     if (s.camera !== 'none' && !$('cam').src) { $('cam').src = '/api/stream'; $('cam-msg').hidden = true; }
     $('dist').textContent = (await api('GET', '/api/distance')).cm;
     $('line').textContent = (await api('GET', '/api/line')).sensors.map((x) => (x ? '●' : '○')).join('');

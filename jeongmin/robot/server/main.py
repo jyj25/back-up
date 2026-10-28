@@ -8,6 +8,8 @@
 - 모든 이동 명령은 duration_ms 뒤에 자동으로 멈춘다 (기본 500ms, 최대 3000ms).
   계속 움직이려면 화면처럼 0.2초마다 같은 명령을 다시 보낸다 → 연결이 끊기면 로봇이 알아서 선다.
 - 속도는 MAX_SPEED (기본 150 / 255) 를 넘지 않는다.
+- 앞쪽으로 가는 중에 초음파 거리가 OBSTACLE_CM (기본 15cm) 보다 가까우면 멈추고,
+  그 상태에서는 앞쪽 이동 명령을 받지 않는다 (뒤·옆·회전은 된다). 0 이면 끔.
 """
 from __future__ import annotations
 
@@ -27,6 +29,8 @@ from .camera import Camera
 from .drivers import LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
+OBSTACLE_CM = float(os.environ.get("OBSTACLE_CM", "15"))
+FORWARD_MOVES = {"forward", "diag_forward_left", "diag_forward_right"}  # 초음파 센서는 앞에 있다
 STATIC = Path(__file__).parent / "static"
 
 
@@ -38,17 +42,36 @@ class Robot:
         self.camera = Camera()
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
+        self.blocked = False  # 장애물 때문에 멈췄는지
 
     async def start(self) -> None:
         self._watchdog = asyncio.create_task(self._watch())
 
     async def _watch(self) -> None:
+        tick = 0
         while True:
             await asyncio.sleep(0.05)
-            if self.driver.state.moving and time.monotonic() >= self._stop_at:
+            tick += 1
+            moving = self.driver.state.moving
+            if moving and time.monotonic() >= self._stop_at:
                 await asyncio.to_thread(self.driver.stop)
+            elif moving in FORWARD_MOVES and tick % 2 == 0:  # 0.1초마다 앞 거리 확인
+                if await asyncio.to_thread(self.too_close):
+                    self.blocked = True
+                    await asyncio.to_thread(self.driver.stop)
+
+    def too_close(self) -> bool:
+        if OBSTACLE_CM <= 0:
+            return False
+        cm = self.driver.distance_cm()
+        return 0 < cm < OBSTACLE_CM  # 0 이하는 측정 실패로 보고 무시
 
     def move(self, action: str, speed: int, duration_ms: int) -> None:
+        if action in FORWARD_MOVES and self.too_close():
+            self.blocked = True
+            self.driver.stop()
+            return
+        self.blocked = False
         self.driver.move(action, min(speed, MAX_SPEED))
         self._stop_at = time.monotonic() + duration_ms / 1000
 
@@ -100,7 +123,8 @@ class LedIn(BaseModel):
 def status():
     s = robot.driver.state
     return {"mode": s.mode, "moving": s.moving, "speed": s.speed, "pan": s.pan, "tilt": s.tilt,
-            "led": s.led, "camera": robot.camera.kind, "max_speed": MAX_SPEED}
+            "led": s.led, "camera": robot.camera.kind, "max_speed": MAX_SPEED,
+            "blocked": robot.blocked, "obstacle_cm": OBSTACLE_CM}
 
 
 @app.post("/api/move")

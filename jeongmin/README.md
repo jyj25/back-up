@@ -12,6 +12,7 @@ jeongmin/
 │   └── troubleshooting.md  라즈베리파이·라즈봇 문제 해결 기록
 └── robot/
     ├── requirements.txt
+    ├── client.py           다른 역할이 파이썬으로 로봇을 부르는 클라이언트 (설치 불필요)
     ├── server/             FastAPI 조종 서버 + 조종 화면(static/)
     │   ├── main.py         API, 자동 정지 타이머
     │   ├── drivers.py      RealDriver(raspbot 라이브러리) / FakeDriver(하드웨어 없이)
@@ -44,6 +45,7 @@ cd ~/ai2-8/jeongmin/robot
 | --- | --- | --- |
 | `ROBOT_MODE` | 자동 (I2C 있으면 real) | `real` / `fake` |
 | `MAX_SPEED` | `150` | 속도 상한 (0~255) |
+| `OBSTACLE_CM` | `15` | 앞쪽 이동 중 이 거리(cm)보다 가까우면 멈춤. `0` 이면 끔 |
 | `CAMERA` | `auto` | `picamera` / `usb` / `none` |
 | `CAMERA_INDEX` | `0` | USB 웹캠 번호 |
 
@@ -53,7 +55,7 @@ cd ~/ai2-8/jeongmin/robot
 | --- | --- | --- |
 | POST | `/api/move` | `{"action": "forward", "speed": 100, "duration_ms": 500}` → **duration 뒤 자동 정지** |
 | POST | `/api/stop` | 즉시 정지 |
-| GET | `/api/status` | `mode, moving, speed, pan, tilt, led, camera, max_speed` |
+| GET | `/api/status` | `mode, moving, speed, pan, tilt, led, camera, max_speed, blocked, obstacle_cm` (`blocked` = 장애물 때문에 멈춤) |
 | POST | `/api/servo` | `{"pan": 0~180, "tilt": 0~110}` (90 = 정면, 둘 중 하나만 보내도 됨) |
 | GET | `/api/distance` | `{"cm": 42.3}` 초음파 |
 | GET | `/api/line` | `{"sensors": [false, true, true, false]}` 바닥 라인 센서 (왼→오) |
@@ -64,19 +66,26 @@ cd ~/ai2-8/jeongmin/robot
 
 `action` 종류: `forward`, `backward`, `turn_left`, `turn_right`, `strafe_left`, `strafe_right`(옆 이동), `diag_forward_left`, `diag_forward_right`, `diag_backward_left`, `diag_backward_right`
 
-예) 파이썬에서 2초 동안 앞으로:
-```python
-import httpx
-httpx.post("http://<라즈베리파이 IP>:8000/api/move", json={"action": "forward", "speed": 100, "duration_ms": 2000})
-```
 **계속 움직이려면 0.2~0.5초마다 같은 명령을 다시 보낸다.** 보내지 않으면 멈춘다 (연결이 끊겨도 안전하게 서도록 일부러 이렇게 만들었다).
+**앞에 물체가 `OBSTACLE_CM` 보다 가까우면** 앞쪽 이동(`forward`, `diag_forward_*`)은 거절되고 `blocked: true` 가 온다. 뒤·옆·회전은 된다.
+
+파이썬에서는 `robot/client.py` 를 복사해 쓰면 위 규칙을 알아서 지킨다:
+```python
+from client import RobotClient
+bot = RobotClient("http://<라즈베리파이 IP>:8000")
+bot.move("forward", speed=100, seconds=2)   # 2초 앞으로, 끝나면 정지 (3초 넘어도 됨)
+bot.servo(pan=60); bot.snapshot("now.jpg")   # 카메라 돌려서 사진 저장 → AI 인식에 사용
+if bot.distance() < 20: bot.beep()
+```
+웹(자바스크립트)에서는 `fetch("/api/move", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({...})})` — `server/static/app.js` 가 예시.
 
 ## 상태 (2026-10-28)
 
 - [x] 라즈베리파이 OS 설치, Wi-Fi·SSH(키 로그인), I2C 켜기, `raspbot` 라이브러리 설치
-- [x] 조종 서버 · 조종 화면 · 가짜 모드 · 테스트 (6개 통과)
+- [x] 조종 서버 · 조종 화면 · 가짜 모드 · 테스트 (8개 통과)
+- [x] 장애물 자동 정지(초음파), 팀원용 파이썬 클라이언트
 - [ ] 라즈봇 조립 (라즈베리파이 장착 직전에서 멈춤)
-- [ ] `hw_test.py` 로 실제 하드웨어 점검 → `docs/robot-specs.md` 측정값 채우기
+- [ ] `hw_test.py` 로 실제 하드웨어 점검 → `docs/robot-specs.md` 측정값 채우기 (`OBSTACLE_CM` 도 실제 제동 거리 보고 조정)
 - [ ] 학교·발표장용 Wi-Fi(휴대폰 핫스팟) 라즈베리파이에 추가
 - [ ] 최종 아이디어가 정해지면 로봇 동작(라인 따라가기, 물체 쪽으로 가기 등)을 API 로 추가
 
@@ -85,6 +94,6 @@ httpx.post("http://<라즈베리파이 IP>:8000/api/move", json={"action": "forw
 - **브랜치 규칙**: main 에 직접 push 하지 않는다. `jeongmin` 브랜치에서 작업 → Pull Request. 다른 사람 폴더는 고치지 않는다.
 - **비밀값 금지**: Wi-Fi 이름·비밀번호, 라즈베리파이 비밀번호, API 키, 라즈베리파이 IP·사용자 이름을 커밋하지 않는다 (공개 저장소).
 - **하드웨어 기능을 추가할 때** `drivers.py` 의 `FakeDriver` 와 `RealDriver` 에 **같은 메서드**를 넣고, `tests/` 에 가짜 모드 테스트를 추가한다. 테스트는 하드웨어 없이 돌아야 한다.
-- **안전**: 이동 명령에는 항상 자동 정지(duration)를 둔다. 속도 상한(`MAX_SPEED`)을 없애지 않는다. 처음 모터를 돌릴 때는 바퀴를 띄운 상태라고 사람에게 확인받는다.
+- **안전**: 이동 명령에는 항상 자동 정지(duration)를 둔다. 속도 상한(`MAX_SPEED`)과 장애물 정지(`OBSTACLE_CM`)를 없애지 않는다. 처음 모터를 돌릴 때는 바퀴를 띄운 상태라고 사람에게 확인받는다.
 - **재부팅·종료**: 라즈베리파이를 재부팅·종료하기 전에 사람에게 묻고, 항상 "**라즈베리파이** 재부팅" 처럼 어느 장치인지 밝힌다. `sudo` 는 비밀번호가 필요하므로 사람이 직접 실행한다.
 - 라즈봇 라이브러리는 `raspbot` 0.1.2 (비공식, I2C 0x2B). 함수 이름은 `drivers.py` 에 정리돼 있다. 서보 위아래는 110° 가 한계.

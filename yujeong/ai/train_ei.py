@@ -230,6 +230,24 @@ def cmd_wasm(out="tester"):
     print("저장:", out)
 
 
+def cmd_fomo(cycles=60, lr=0.001):
+    """객체 검출(FOMO) 임펄스로 바꾸고 학습한다. 라벨 방식은 먼저 object_detection 이어야 한다 (boxes 명령)."""
+    body = {"inputBlocks": [{"id": 1, "type": "image", "name": "image", "title": "Image data", "imageWidth": 96,
+                             "imageHeight": 96, "resizeMode": "squash", "resizeMethod": "lanczos3"}],
+            "dspBlocks": [{"id": 2, "type": "image", "name": "Image", "axes": ["image"], "title": "Image", "input": 1}],
+            "learnBlocks": [{"id": 3, "type": "keras-object-detection", "name": "Object detection", "dsp": [2],
+                             "title": "Object detection"}]}
+    call("POST", f"{P}/impulse", body)
+    call("POST", f"{P}/training/keras/3", {"trainingCycles": int(cycles), "learningRate": float(lr),
+         "visualLayers": [{"type": "fomo_mobilenet_v2_a35", "neurons": 16, "dropoutRate": 0.1}],
+         "augmentationPolicyImage": "all", "autoClassWeights": True})
+    j = call("POST", f"{P}/jobs/generate-features",
+             {"dspId": 2, "calculateFeatureImportance": False, "skipFeatureExplorer": True})
+    job_wait(j["id"], "특징 생성")
+    j = call("POST", f"{P}/jobs/train/keras/3", {"mode": "visual", "trainingCycles": int(cycles)})
+    job_wait(j["id"], "FOMO 학습")
+
+
 def cmd_status():
     imp = call("GET", f"{P}/impulse")["impulse"]
     learn = imp["learnBlocks"][0]["id"]
@@ -249,6 +267,8 @@ if __name__ == "__main__":
         cmd_train(*a[1:4])
     elif a[0] in ("disable", "enable"):
         cmd_set_active(a[1], a[0] == "enable")
+    elif a[0] == "fomo":
+        cmd_fomo(*a[1:3])
     elif a[0] == "eval":
         cmd_eval()
     elif a[0] == "boxes":

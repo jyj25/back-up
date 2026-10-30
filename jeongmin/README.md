@@ -13,11 +13,15 @@ jeongmin/
 └── robot/
     ├── requirements.txt
     ├── client.py           다른 역할이 파이썬으로 로봇을 부르는 클라이언트 (설치 불필요)
+    ├── find_robot.py       같은 Wi-Fi 에서 로봇 IP 찾기 (노트북에서)
     ├── server/             FastAPI 조종 서버 + 조종 화면(static/)
     │   ├── main.py         API, 자동 정지 타이머
     │   ├── drivers.py      RealDriver(raspbot 라이브러리) / FakeDriver(하드웨어 없이)
     │   └── camera.py       카메라 모듈 3(picamera2) → USB 웹캠(OpenCV) → 없음
-    ├── scripts/hw_test.py  하드웨어 단계별 점검 (라즈베리파이에서)
+    ├── scripts/
+    │   ├── hw_test.py      하드웨어 단계별 점검 (라즈베리파이에서)
+    │   ├── wifi.sh         핫스팟 등 Wi-Fi 미리 등록·확인 (라즈베리파이에서)
+    │   └── autostart.sh    전원 켜면 조종 서버 자동 실행 (라즈베리파이에서)
     └── tests/              가짜 로봇으로 하는 서버 테스트
 ```
 
@@ -48,6 +52,26 @@ cd ~/ai2-8/jeongmin/robot
 | `OBSTACLE_CM` | `15` | 앞쪽 이동 중 이 거리(cm)보다 가까우면 멈춤. `0` 이면 끔 |
 | `CAMERA` | `auto` | `picamera` / `usb` / `none` |
 | `CAMERA_INDEX` | `0` | USB 웹캠 번호 |
+
+## 조작 전 준비: 학교·발표장 Wi-Fi (집에서 미리 한 번)
+
+라즈베리파이는 **저장된 Wi-Fi 에만** 붙는다. 집 Wi-Fi 로 SSH 접속한 상태에서 휴대폰 핫스팟을 미리 등록해 둔다.
+
+```bash
+cd ~/ai2-8/jeongmin/robot
+bash scripts/wifi.sh scan        # 핫스팟을 켜 두고 → 목록에 보이는지
+bash scripts/wifi.sh add         # SSID·비밀번호·우선순위 입력 (sudo 비밀번호는 사람이)
+bash scripts/wifi.sh list        # 집(0) + 핫스팟(10) 이 저장됐는지
+bash scripts/autostart.sh install   # 전원만 켜면 조종 서버가 뜨게 (선택)
+```
+
+현장에서는:
+1. 휴대폰 핫스팟 켜기 → 라즈베리파이 전원 → 1분 기다리기
+2. 노트북도 같은 핫스팟에 연결 → `python find_robot.py` → `★ 로봇 조종 서버: http://…:8000` 주소로 접속
+   (휴대폰에서는 `http://<호스트이름>.local:8000` 도 대부분 된다)
+3. 조종 화면에서 상태가 "실제 로봇" 인지 확인하고 시작
+
+주의: 아이폰 핫스팟은 **'호환성 최대화'** 켜기. 핫스팟 이름·비밀번호를 바꾸면 다시 `wifi.sh add`. Wi-Fi 비밀번호는 이 저장소에 적지 않는다.
 
 ## API (다른 역할이 로봇을 쓰는 방법)
 
@@ -86,7 +110,8 @@ if bot.distance() < 20: bot.beep()
 - [x] 장애물 자동 정지(초음파), 팀원용 파이썬 클라이언트
 - [ ] 라즈봇 조립 (라즈베리파이 장착 직전에서 멈춤)
 - [ ] `hw_test.py` 로 실제 하드웨어 점검 → `docs/robot-specs.md` 측정값 채우기 (`OBSTACLE_CM` 도 실제 제동 거리 보고 조정)
-- [ ] 학교·발표장용 Wi-Fi(휴대폰 핫스팟) 라즈베리파이에 추가
+- [x] Wi-Fi 등록(`wifi.sh`)·자동 실행(`autostart.sh`)·로봇 찾기(`find_robot.py`) 도구
+- [ ] 위 도구로 휴대폰 핫스팟 실제 등록 + 자동 실행 켜기 (라즈베리파이에서, sudo 필요)
 - [ ] 최종 아이디어가 정해지면 로봇 동작(라인 따라가기, 물체 쪽으로 가기 등)을 API 로 추가
 
 ## AI 코딩 도우미에게 (이 폴더를 수정할 때 지킬 것)

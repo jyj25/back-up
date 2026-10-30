@@ -11,12 +11,17 @@
 - 앞쪽으로 가는 중에 초음파 거리가 OBSTACLE_CM (기본 15cm) 보다 가까우면 멈추고,
   그 상태에서는 앞쪽 이동 명령을 받지 않는다 (뒤·옆·회전은 된다). 0 이면 끔.
 
+통 찾아가기 (stations.json 의 정류장마다 ArUco 마커):
+  POST /api/mission {"station": "recycle"} → 마커 찾아 다가가기 → 쏟기 → 출발점(home) 복귀
+  수동 이동·정지 명령이 오면 임무는 바로 취소된다.
+
 다른 웹(팀원 화면)에서 브라우저로 API 를 부르려면 CORS_ORIGINS 에 그 웹 주소를 쉼표로 적는다.
   예) CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5500"   (비워 두면 이 서버의 화면만 허용)
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -31,6 +36,8 @@ from pydantic import BaseModel, Field
 
 from .camera import Camera
 from .drivers import LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
+from .navigator import Mission, NavConfig
+from .vision import CameraVision, NoVision, SimVision
 
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
 OBSTACLE_CM = float(os.environ.get("OBSTACLE_CM", "15"))
@@ -38,6 +45,10 @@ FORWARD_MOVES = {"forward", "diag_forward_left", "diag_forward_right"}  # 초음
 # 끝의 / 는 브라우저가 보내는 Origin 에 없으므로 떼어 둔다
 CORS_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 STATIC = Path(__file__).parent / "static"
+STATIONS_FILE = Path(os.environ.get("STATIONS_FILE", Path(__file__).parent.parent / "stations.json"))
+_CONF = json.loads(STATIONS_FILE.read_text(encoding="utf-8"))
+STATIONS: dict = _CONF["stations"]
+NAV = NavConfig.from_dict(_CONF.get("nav", {}))
 
 
 class Robot:
@@ -46,6 +57,13 @@ class Robot:
     def __init__(self) -> None:
         self.driver = make_driver()
         self.camera = Camera()
+        if self.driver.mode == "fake":
+            self.vision = SimVision(self.driver.world)  # 가짜 세계의 마커
+        elif self.camera.kind != "none":
+            self.vision = CameraVision(self.camera)
+        else:
+            self.vision = NoVision()
+        self.mission = Mission(self, STATIONS, NAV)
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
         self.blocked = False  # 장애물 때문에 멈췄는지
@@ -99,6 +117,7 @@ async def lifespan(app: FastAPI):
     print(f"[robot] mode={robot.driver.mode} camera={robot.camera.kind} max_speed={MAX_SPEED} "
           f"cors={CORS_ORIGINS or '없음'}")
     yield
+    await robot.mission.abort("서버 종료")
     robot.close()
 
 
@@ -129,22 +148,30 @@ class LedIn(BaseModel):
     color: Literal[tuple(LED_COLORS)] | None = None  # type: ignore[valid-type]  None 이면 끔
 
 
+class MissionIn(BaseModel):
+    station: Literal[tuple(STATIONS)]  # type: ignore[valid-type]  stations.json 의 이름
+    dump: bool = Field(default=True, description="도착하면 쏟기")
+    return_home: bool = Field(default=True, description="끝나면 출발점(home)으로")
+
+
 @app.get("/api/status")
 def status():
     s = robot.driver.state
     return {"mode": s.mode, "moving": s.moving, "speed": s.speed, "pan": s.pan, "tilt": s.tilt,
             "led": s.led, "camera": robot.camera.kind, "max_speed": MAX_SPEED,
-            "blocked": robot.blocked, "obstacle_cm": OBSTACLE_CM}
+            "blocked": robot.blocked, "obstacle_cm": OBSTACLE_CM, "mission": robot.mission.state["phase"]}
 
 
 @app.post("/api/move")
-def move(body: MoveIn):
+async def move(body: MoveIn):  # 임무 취소가 이벤트 루프에서 돌아야 해서 async
+    await robot.mission.abort("수동 조종")
     robot.move(body.action, body.speed, body.duration_ms)
     return status()
 
 
 @app.post("/api/stop")
-def stop():
+async def stop():
+    await robot.mission.abort("정지 버튼")
     robot.driver.stop()
     return status()
 
@@ -175,6 +202,41 @@ def beep(body: BeepIn):
 def led(body: LedIn):
     robot.driver.set_led(body.color)
     return status()
+
+
+@app.get("/api/stations")
+def stations():
+    return STATIONS
+
+
+@app.get("/api/markers")
+async def markers():
+    """지금 카메라에 보이는 마커 (가짜 모드면 가짜 세계의 위치도)"""
+    seen = await asyncio.to_thread(robot.vision.markers)
+    out = {"markers": [m.to_dict() for m in seen]}
+    if robot.driver.mode == "fake":
+        out["pose"] = robot.driver.world.pose()
+    return out
+
+
+@app.post("/api/mission", status_code=202)
+async def mission_start(body: MissionIn):
+    if robot.mission.running:
+        raise HTTPException(status_code=409, detail="이미 임무 중입니다. 먼저 /api/mission/cancel")
+    robot.mission.start(body.station, body.dump, body.return_home)
+    return robot.mission.state
+
+
+@app.get("/api/mission")
+def mission_state():
+    return {**robot.mission.state, "running": robot.mission.running,
+            "seen": [m.to_dict() for m in robot.mission.seen]}
+
+
+@app.post("/api/mission/cancel")
+async def mission_cancel():
+    await robot.mission.abort()
+    return mission_state()
 
 
 @app.get("/api/camera.jpg")

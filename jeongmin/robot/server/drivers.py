@@ -7,11 +7,12 @@
 """
 from __future__ import annotations
 
-import math
 import os
 import threading
 import time
 from dataclasses import dataclass, field
+
+from .sim import World
 
 # 이동 명령 이름 → raspbot.Motors 메서드 이름
 MOVES = {
@@ -49,7 +50,7 @@ class FakeDriver:
 
     def __init__(self) -> None:
         self.state = RobotState(mode=self.mode)
-        self._t0 = time.monotonic()
+        self.world = World()  # 가짜 위치·마커·거리 (sim.py)
 
     def _log(self, text: str) -> None:
         self.state.history.append(text)
@@ -57,10 +58,12 @@ class FakeDriver:
 
     def move(self, action: str, speed: int) -> None:
         self.state.moving, self.state.speed = action, speed
+        self.world.set_motion(action, speed)
         self._log(f"move {action} {speed}")
 
     def stop(self) -> None:
         self.state.moving, self.state.speed = None, 0
+        self.world.set_motion(None, 0)
         self._log("stop")
 
     def set_servo(self, pan: int | None, tilt: int | None) -> None:
@@ -71,8 +74,7 @@ class FakeDriver:
         self._log(f"servo {self.state.pan} {self.state.tilt}")
 
     def distance_cm(self) -> float:
-        # 30~80cm 사이를 천천히 오가는 가짜 거리
-        return round(55 + 25 * math.sin((time.monotonic() - self._t0) / 3), 1)
+        return self.world.distance_cm()
 
     def line(self) -> list[bool]:
         return [False, True, True, False]
@@ -83,6 +85,10 @@ class FakeDriver:
     def set_led(self, color: str | None) -> None:
         self.state.led = color
         self._log(f"led {color}")
+
+    def dump(self) -> None:
+        """실은 물건 쏟기"""
+        self._log("dump")
 
     def close(self) -> None:
         self.stop()
@@ -148,6 +154,17 @@ class RealDriver(FakeDriver):
             else:
                 self._bot.leds.set_all(getattr(self._LedColor, color.upper()))
         super().set_led(color)
+
+    def dump(self) -> None:
+        # TODO 쏟기 장치(트레이 + 서보)가 정해지면 여기서 움직인다.
+        #  지금은 신호만: 노란 LED + 삐삐삐 → 사람이 손으로 쏟아 준다 (시연 흐름은 이어진다)
+        self.set_led("yellow")
+        for _ in range(3):
+            self.beep(120)
+            time.sleep(0.12)
+        time.sleep(1.5)
+        self.set_led(None)
+        super().dump()
 
     def close(self) -> None:
         try:

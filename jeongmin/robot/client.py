@@ -5,6 +5,7 @@
     bot.move("forward", speed=100, seconds=1.5)   # 1.5초 앞으로 (끝날 때까지 기다림)
     bot.beep(); bot.led("green")
     print(bot.distance())                         # 앞 거리 cm
+    bot.go("recycle")                              # 재활용 통 찾아가서 쏟고 출발점으로 (끝날 때까지 기다림)
 
 노트북에서 가짜 서버로 먼저 시험: ROBOT_MODE=fake uvicorn server.main:app --port 8000
 그리고 python client.py  → 간단한 동작 확인
@@ -61,6 +62,33 @@ class RobotClient:
 
     def led(self, color: str | None) -> dict:
         return self._call("POST", "/api/led", {"color": color})
+
+    # ---- 통 찾아가기 (stations.json) ----
+
+    def stations(self) -> dict:
+        return self._call("GET", "/api/stations")
+
+    def go(self, station: str, dump: bool = True, return_home: bool = True,
+           wait: bool = True, timeout: float = 180) -> dict:
+        """station 으로 가서 (쏟고) (출발점으로). AI 가 분류 결과로 station 이름만 정해서 부르면 된다.
+        wait=True 면 끝날 때까지 기다리고 마지막 상태를 돌려준다 (phase: done / failed / cancelled)."""
+        self._call("POST", "/api/mission", {"station": station, "dump": dump, "return_home": return_home})
+        if not wait:
+            return self.mission()
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            m = self.mission()
+            if not m["running"]:
+                return m
+            time.sleep(0.5)
+        self.cancel_mission()
+        return self.mission()
+
+    def mission(self) -> dict:
+        return self._call("GET", "/api/mission")
+
+    def cancel_mission(self) -> dict:
+        return self._call("POST", "/api/mission/cancel")
 
     def snapshot(self, path: str = "snapshot.jpg") -> str:
         """카메라 사진 한 장을 파일로 저장 (AI 역할이 인식에 쓸 때)"""

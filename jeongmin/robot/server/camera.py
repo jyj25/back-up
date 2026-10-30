@@ -46,23 +46,25 @@ class Camera:
         except Exception as e:
             print(f"[camera] OpenCV 웹캠 사용 불가: {e}")
 
-    def jpeg(self, quality: int = 80) -> bytes | None:
-        """지금 화면을 JPEG 한 장으로. 카메라가 없으면 None."""
+    def frame(self):
+        """지금 화면 (BGR numpy 배열). 카메라가 없으면 None."""
         with self._lock:
             if self.kind == "picamera":
-                import cv2
-
-                frame = self._picam.capture_array()  # RGB888 은 실제로 BGR 순서라 OpenCV 에 그대로 넣는다
-            elif self.kind == "usb":
-                import cv2
-
+                return self._picam.capture_array()  # RGB888 은 실제로 BGR 순서라 OpenCV 에 그대로 넣는다
+            if self.kind == "usb":
                 ok, frame = self._cap.read()
-                if not ok:
-                    return None
-            else:
-                return None
-            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
-            return buf.tobytes() if ok else None
+                return frame if ok else None
+            return None
+
+    def jpeg(self, quality: int = 80) -> bytes | None:
+        """지금 화면을 JPEG 한 장으로. 카메라가 없으면 None."""
+        frame = self.frame()
+        if frame is None:
+            return None
+        import cv2
+
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return buf.tobytes() if ok else None
 
     def frames(self, fps: float = 15):
         """MJPEG 스트림용 프레임 생성기"""

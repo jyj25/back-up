@@ -60,6 +60,40 @@ for (const id of ['pan', 'tilt']) {
 $('beep').addEventListener('click', () => api('POST', '/api/beep', { ms: 150 }));
 $('led').addEventListener('change', () => api('POST', '/api/led', { color: $('led').value || null }));
 
+// ---- 통 찾아가기 ----
+const PHASES = {
+  idle: '대기', starting: '시작', search: '마커 찾는 중', align: '방향 맞추는 중', approach: '다가가는 중',
+  arrived: '도착', dumping: '쏟는 중', backing: '뒤로 빠지는 중', done: '완료', failed: '실패', cancelled: '취소됨',
+};
+
+async function loadStations() {
+  const stations = await api('GET', '/api/stations');
+  for (const [name, info] of Object.entries(stations)) {
+    const b = document.createElement('button');
+    b.textContent = name === 'home' ? '출발점으로' : info.label;
+    b.title = `마커 ${info.marker}`;
+    b.addEventListener('click', () => {
+      stop();
+      const home = name === 'home';
+      api('POST', '/api/mission', {
+        station: name, dump: !home && $('m-dump').checked, return_home: !home && $('m-home').checked,
+      }).catch((e) => { $('m-msg').textContent = String(e); });
+    });
+    $('stations').append(b);
+  }
+}
+$('m-cancel').addEventListener('click', () => api('POST', '/api/mission/cancel'));
+
+async function pollMission() {
+  const m = await api('GET', '/api/mission');
+  $('m-phase').textContent = PHASES[m.phase] ?? m.phase;
+  $('m-msg').textContent = m.message;
+  $('m-cancel').disabled = !m.running;
+  for (const b of $('stations').children) b.disabled = m.running;
+  const seen = m.running ? m.seen : (await api('GET', '/api/markers')).markers;
+  $('m-seen').textContent = seen.length ? seen.map((k) => `${k.id}번(${Math.round(k.size * 100)}%)`).join(' ') : '없음';
+}
+
 async function poll() {
   try {
     const s = await api('GET', '/api/status');
@@ -69,10 +103,12 @@ async function poll() {
     if (s.camera !== 'none' && !$('cam').src) { $('cam').src = '/api/stream'; $('cam-msg').hidden = true; }
     $('dist').textContent = (await api('GET', '/api/distance')).cm;
     $('line').textContent = (await api('GET', '/api/line')).sensors.map((x) => (x ? '●' : '○')).join('');
+    await pollMission();
   } catch {
     $('mode').textContent = '연결 끊김';
     $('mode').className = 'badge';
   }
 }
+loadStations().catch(() => {});
 poll();
 setInterval(poll, 500);

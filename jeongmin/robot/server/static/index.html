@@ -53,6 +53,20 @@
         </select>
       </div>
     </section>
+
+    <section class="card">
+      <h2>통 찾아가기</h2>
+      <div id="stations" class="stations"></div>
+      <label class="check"><input type="checkbox" id="m-dump" checked /> 도착하면 쏟기</label>
+      <label class="check"><input type="checkbox" id="m-home" checked /> 끝나면 출발점으로</label>
+      <div class="readout">
+        <span>임무 <b id="m-phase">대기</b></span>
+        <span id="m-msg"></span>
+      </div>
+      <div class="readout"><span>보이는 마커 <b id="m-seen">—</b></span></div>
+      <button id="m-cancel">임무 취소</button>
+      <p class="hint">통 앞면의 마커를 카메라로 찾아갑니다. 조종 버튼이나 정지를 누르면 임무가 바로 취소됩니다.</p>
+    </section>
   </main>
   <script src="/app.js"></script>
 </body>

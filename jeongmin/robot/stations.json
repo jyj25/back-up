@@ -1,0 +1,21 @@
+{
+  "_설명": "통(정류장)마다 ArUco 마커 번호를 정한다. 마커는 scripts/make_markers.py 로 인쇄. nav 값은 조립 후 실제로 돌려 보고 고친다.",
+  "stations": {
+    "home":    {"marker": 0, "label": "출발점 (물건 싣는 곳)"},
+    "recycle": {"marker": 1, "label": "재활용"},
+    "general": {"marker": 2, "label": "일반쓰레기"},
+    "vinyl":   {"marker": 3, "label": "비닐"}
+  },
+  "nav": {
+    "speed": 70,
+    "turn_speed": 60,
+    "pulse_ms": 250,
+    "settle_ms": 150,
+    "center_tol": 0.15,
+    "arrive_size": 0.3,
+    "arrive_cm": 25,
+    "search_steps": 40,
+    "step_limit": 300,
+    "backup_ms": 600
+  }
+}

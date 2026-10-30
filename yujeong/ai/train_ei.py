@@ -184,6 +184,36 @@ def cmd_set_active(label, active):
     print(f"{label}: {n}장 {'포함' if active else '제외'}")
 
 
+def cmd_boxes(boxes_json, *photo_dirs):
+    """autolabel.py 가 만든 박스를 EI 샘플에 올린다(프로젝트를 객체 검출 방식으로 전환).
+    EI 샘플과 로컬 사진은 파일 내용(md5)으로 짝짓는다. 박스를 못 찾은 사진은 EI 라벨링 화면에 남긴다."""
+    import hashlib
+    boxes = json.load(open(boxes_json, encoding="utf-8"))
+    by_md5 = {v["md5"]: v for v in boxes.values()}
+    stem2md5 = {}
+    for d in photo_dirs:
+        for f in Path(d).glob("*/*.jpg"):
+            stem2md5[f.stem] = hashlib.md5(f.read_bytes()).hexdigest()
+    call("POST", f"{STUDIO}/{PID}", {"labelingMethod": "object_detection"})
+    done = skipped = missing = 0
+    for cat in ("training", "testing"):
+        for s in list_samples(cat):
+            if s["isDisabled"]:
+                continue
+            md5 = stem2md5.get(s["filename"].split(".jpg")[0])
+            v = by_md5.get(md5)
+            if not v:
+                missing += 1
+                continue
+            if v["label"] != "empty" and not v["boxes"]:
+                skipped += 1
+                continue
+            bb = [{"label": v["label"], "x": x, "y": y, "width": w, "height": h} for x, y, w, h in v["boxes"]]
+            call("POST", f"{P}/raw-data/{s['id']}/bounding-boxes", {"boundingBoxes": bb})
+            done += 1
+    print(f"박스 올림 {done}장, 박스 없어 라벨링 화면에 남김 {skipped}장, 로컬 사진 못 찾음 {missing}장")
+
+
 def cmd_wasm(out="tester"):
     """브라우저에서 모델을 돌리는 WebAssembly 배포본을 받아 tester/ 에 풀고, wasm 은 gzip+base64 JS 로 변환
     (file:// 로 열어도 fetch 없이 동작하게 하려는 것)."""
@@ -221,6 +251,8 @@ if __name__ == "__main__":
         cmd_set_active(a[1], a[0] == "enable")
     elif a[0] == "eval":
         cmd_eval()
+    elif a[0] == "boxes":
+        cmd_boxes(*a[1:])
     elif a[0] == "wasm":
         cmd_wasm(*a[1:2])
     else:

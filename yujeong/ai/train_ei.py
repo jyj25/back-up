@@ -230,10 +230,10 @@ def cmd_wasm(out="tester"):
     print("저장:", out)
 
 
-def cmd_fomo(cycles=60, lr=0.001):
+def cmd_fomo(cycles=60, lr=0.001, size=96):
     """객체 검출(FOMO) 임펄스로 바꾸고 학습한다. 라벨 방식은 먼저 object_detection 이어야 한다 (boxes 명령)."""
-    body = {"inputBlocks": [{"id": 1, "type": "image", "name": "image", "title": "Image data", "imageWidth": 96,
-                             "imageHeight": 96, "resizeMode": "squash", "resizeMethod": "lanczos3"}],
+    body = {"inputBlocks": [{"id": 1, "type": "image", "name": "image", "title": "Image data", "imageWidth": int(size),
+                             "imageHeight": int(size), "resizeMode": "squash", "resizeMethod": "lanczos3"}],
             "dspBlocks": [{"id": 2, "type": "image", "name": "Image", "axes": ["image"], "title": "Image", "input": 1}],
             "learnBlocks": [{"id": 3, "type": "keras-object-detection", "name": "Object detection", "dsp": [2],
                              "title": "Object detection"}]}
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     elif a[0] in ("disable", "enable"):
         cmd_set_active(a[1], a[0] == "enable")
     elif a[0] == "fomo":
-        cmd_fomo(*a[1:3])
+        cmd_fomo(*a[1:4])
     elif a[0] == "eval":
         cmd_eval()
     elif a[0] == "boxes":

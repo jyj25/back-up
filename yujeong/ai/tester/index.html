@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>분류 모델 테스트</title>
+<title>물체 검출 테스트</title>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --mut:#667085; --line:#d9dde3; --acc:#2563eb; --ok:#15803d; --bad:#b42318; --warn:#b45309; }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --card:#1d2128; --fg:#e8eaee; --mut:#9aa3b0; --line:#323944; --acc:#6ea0ff; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; } }
@@ -43,8 +43,8 @@
 </head>
 <body>
 <main>
-  <h1>분류 모델 테스트</h1>
-  <div class="sub">Edge Impulse 모델(int8, 96×96)을 이 브라우저에서 그대로 돌립니다. 서버·인터넷 없이 동작합니다.
+  <h1>물체 검출 테스트</h1>
+  <div class="sub">Edge Impulse 객체 검출(FOMO, int8, 96×96) 모델을 이 브라우저에서 그대로 돌립니다. 물체마다 위치와 종류를 표시합니다. 서버·인터넷 없이 동작합니다.
     <span class="warn" id="modelWarn"></span></div>
 
   <div class="grid">
@@ -63,8 +63,9 @@
         <label id="mirrorWrap">회전 <select id="rot"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
       </div>
       <div id="status">모델 불러오는 중…</div>
-      <div class="note">모델 입력 (중앙 정사각형 → 96×96):</div>
-      <canvas id="model" width="96" height="96"></canvas>
+      <div class="note">모델이 보는 화면 (중앙 정사각형으로 잘라 96×96 으로 줄인 것) + 검출 위치:</div>
+      <canvas id="view" width="384" height="384" style="width:100%;max-width:384px;border:1px solid var(--line);border-radius:8px"></canvas>
+      <canvas id="model" width="96" height="96" hidden></canvas>
     </section>
 
     <section class="card">
@@ -77,7 +78,7 @@
       <div class="row" id="truthBtns"></div>
       <div style="margin-top:8px"><table id="cm"></table></div>
       <div class="row"><span id="acc" class="note"></span><button id="reset">기록 지우기</button><button id="csv">CSV 복사</button></div>
-      <div class="note">판정 기준(펌웨어 판정 로직 기본값): 1등 ≥ 0.80, 1·2등 차이 ≥ 0.20. 미달이면 “판정 보류”. 기준값은 가정입니다.</div>
+      <div class="note">판정: 확신도 0.60 이상 검출 중 가장 높은 것. 검출이 없으면 ‘empty’(빈 트레이)로 기록합니다. 보드용 판정 규칙(연속 3번 등)은 아직 적용하지 않았습니다.</div>
     </section>
   </div>
 </main>
@@ -85,10 +86,12 @@
 <script src="model-wasm.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const SIZE = 96, CONF = 0.80, MARGIN = 0.20;
+const SIZE = 96, VIEW = 384, MINSCORE = 0.60;
+const NAMES = ['can', 'general_trash', 'paper', 'pet'];
+const COLORS = { can: '#2563eb', general_trash: '#a855f7', paper: '#16a34a', pet: '#ea580c' };
 let classifier = null, labels = [], mode = 'webcam', busy = false, current = null;
-const log = JSON.parse((() => { try { return localStorage.getItem('tester-log') } catch { return null } })() || '[]');
-const saveLog = () => { try { localStorage.setItem('tester-log', JSON.stringify(log)); } catch {} };
+const log = JSON.parse((() => { try { return localStorage.getItem('tester-log-det') } catch { return null } })() || '[]');
+const saveLog = () => { try { localStorage.setItem('tester-log-det', JSON.stringify(log)); } catch {} };
 const setStatus = t => $('status').textContent = t;
 
 // ---- 모델 로드: gzip+base64 로 내장된 wasm 을 풀어서 Emscripten 모듈에 직접 넘긴다 (fetch 없음 → file:// 에서도 동작)
@@ -103,13 +106,13 @@ async function loadModel() {
   await classifier.init();
   const p = classifier.getProjectInfo();
   const props = classifier.getProperties();
-  labels = props.labels || [];
-  if (!labels.length) { const r = classifier.classify(new Array(SIZE * SIZE).fill(0)); labels = r.results.map(x => x.label); }
+  labels = NAMES.concat(['empty']);
   $('modelWarn').textContent = ` 모델: ${p.name} v${p.deploy_version}, 클래스 ${labels.join('/')}`;
 }
 
 // ---- 전처리: 학습 때와 같게 중앙 정사각형 크롭 → 96×96
 const mc = $('model'), mx = mc.getContext('2d', { willReadFrequently: true });
+const vc = $('view'), vx = vc.getContext('2d');
 function toFeatures(src, sw, sh) {
   const rot = +$('rot').value;
   mx.save(); mx.clearRect(0, 0, SIZE, SIZE);
@@ -117,20 +120,34 @@ function toFeatures(src, sw, sh) {
   const side = Math.min(sw, sh), sx = (sw - side) / 2, sy = (sh - side) / 2;
   mx.drawImage(src, sx, sy, side, side, -SIZE / 2, -SIZE / 2, SIZE, SIZE);
   mx.restore();
+  vx.save(); vx.clearRect(0, 0, VIEW, VIEW);
+  vx.translate(VIEW / 2, VIEW / 2); vx.rotate(rot * Math.PI / 180);
+  vx.drawImage(src, sx, sy, side, side, -VIEW / 2, -VIEW / 2, VIEW, VIEW);
+  vx.restore();
   const d = mx.getImageData(0, 0, SIZE, SIZE).data, f = new Array(SIZE * SIZE);
   for (let i = 0; i < f.length; i++) f[i] = (d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2];
   return f;
 }
 
 function show(res, ms) {
-  const r = [...res.results].sort((a, b) => b.value - a.value);
-  const top = r[0], second = r[1] || { value: 0 };
-  const ok = top.value >= CONF && top.value - second.value >= MARGIN;
-  $('verdict').innerHTML = ok ? `${top.label} <small>${(top.value * 100).toFixed(0)}%</small>` : `판정 보류 <small>(1등: ${top.label} ${(top.value * 100).toFixed(0)}%)</small>`;
-  $('why').textContent = ok ? '' : top.value < CONF ? `1등 확신도가 ${CONF} 미만` : `1·2등 차이가 ${MARGIN} 미만`;
-  $('bars').innerHTML = r.map((x, i) => `<div class="bar ${i === 0 ? 'top' : ''}"><b>${x.label}</b><div class="t"><i style="width:${x.value * 100}%"></i></div><span>${(x.value * 100).toFixed(1)}%</span></div>`).join('');
+  const k = VIEW / SIZE;
+  const dets = res.results.filter(x => x.value >= MINSCORE).sort((a, b) => b.value - a.value);
+  vx.lineWidth = 3; vx.font = 'bold 14px sans-serif';
+  for (const d of dets) {
+    const c = COLORS[d.label] || '#fff';
+    vx.strokeStyle = c; vx.strokeRect(d.x * k, d.y * k, d.width * k, d.height * k);
+    vx.fillStyle = c; vx.fillText(`${d.label} ${(d.value * 100).toFixed(0)}%`, d.x * k + 2, Math.max(14, d.y * k - 4));
+  }
+  const top = dets[0];
+  const counts = {}; dets.forEach(d => counts[d.label] = (counts[d.label] || 0) + 1);
+  $('verdict').innerHTML = top ? `${top.label} <small>${(top.value * 100).toFixed(0)}%</small>` : `물체 없음 <small>(빈 트레이)</small>`;
+  $('why').textContent = top ? '' : `확신도 ${MINSCORE} 이상인 검출이 없음`;
+  $('bars').innerHTML = dets.length
+    ? `<div class="note">검출된 칸 ${dets.length}개 (한 물체가 여러 칸으로 잡힐 수 있음): ` + Object.entries(counts).map(([l, n]) => `${l} ${n}`).join(', ') + '</div>' +
+      dets.slice(0, 8).map((x, i) => `<div class="bar ${i === 0 ? 'top' : ''}"><b>${x.label}</b><div class="t"><i style="width:${x.value * 100}%"></i></div><span>${(x.value * 100).toFixed(1)}%</span></div>`).join('')
+    : '<div class="note">검출 없음</div>';
   $('ms').textContent = `추론 ${ms.toFixed(0)} ms (브라우저 기준, 보드 속도 아님)`;
-  current = { pred: top.label, decided: ok };
+  current = { pred: top ? top.label : 'empty', decided: true };
 }
 
 function classify(src, sw, sh) {
@@ -251,7 +268,7 @@ function renderLog() {
   log.forEach(e => { if (m[e.truth]) { m[e.truth][e.decided ? e.pred : '보류']++; if (e.decided && e.pred === e.truth) good++; } });
   $('cm').innerHTML = '<tr><th>정답＼예측</th>' + L.concat(['보류']).map(c => `<th>${c}</th>`).join('') + '</tr>' +
     L.map(a => `<tr><th>${a}</th>` + L.concat(['보류']).map(b => `<td class="${a === b ? 'd' : ''}">${m[a][b]}</td>`).join('') + '</tr>').join('');
-  $('acc').textContent = log.length ? `정확도 ${good}/${log.length} (${(good / log.length * 100).toFixed(0)}%) — 판정 보류는 오답으로 셈` : '기록 없음';
+  $('acc').textContent = log.length ? `정확도 ${good}/${log.length} (${(good / log.length * 100).toFixed(0)}%) — ` : '기록 없음';
 }
 function buildTruthBtns() {
   $('truthBtns').innerHTML = labels.map(l => `<button data-l="${l}">${l}</button>`).join('');

@@ -50,6 +50,12 @@ cd ~/ai2-8/jeongmin/robot
 | `ROBOT_MODE` | 자동 (I2C 있으면 real) | `real` / `fake` |
 | `MAX_SPEED` | `150` | 속도 상한 (0~255) |
 | `OBSTACLE_CM` | `15` | 앞쪽 이동 중 이 거리(cm)보다 가까우면 멈춤. `0` 이면 끔 |
+| `CORS_ORIGINS` | (없음) | 브라우저로 API 를 부를 **팀원 웹 주소**, 쉼표로 여러 개. 예) `http://localhost:5173,http://127.0.0.1:5500` |
+
+자동 실행(`autostart.sh`)일 때는 `robot/robot.env.example` 을 `robot/robot.env` 로 복사해서 고치고 `sudo systemctl restart raspbot`.
+
+**팀원 웹에서 부를 때 (CORS)**: 브라우저는 다른 주소의 페이지가 로봇 API 를 부르는 것을 막는다. 팀원 웹 주소를 `CORS_ORIGINS` 에 넣어야 한다 (파이썬·앱에서 부를 때는 필요 없음).
+`https` 로 배포된 사이트(Vercel 등)에서 `http://<로봇 IP>` 는 CORS 와 별개로 브라우저가 막는다 → 팀원 웹은 노트북에서 `http://localhost…` 로 띄우거나 로봇 서버에 넣어서 쓴다.
 | `CAMERA` | `auto` | `picamera` / `usb` / `none` |
 | `CAMERA_INDEX` | `0` | USB 웹캠 번호 |
 

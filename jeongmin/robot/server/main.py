@@ -10,6 +10,9 @@
 - 속도는 MAX_SPEED (기본 150 / 255) 를 넘지 않는다.
 - 앞쪽으로 가는 중에 초음파 거리가 OBSTACLE_CM (기본 15cm) 보다 가까우면 멈추고,
   그 상태에서는 앞쪽 이동 명령을 받지 않는다 (뒤·옆·회전은 된다). 0 이면 끔.
+
+다른 웹(팀원 화면)에서 브라우저로 API 를 부르려면 CORS_ORIGINS 에 그 웹 주소를 쉼표로 적는다.
+  예) CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5500"   (비워 두면 이 서버의 화면만 허용)
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -31,6 +35,8 @@ from .drivers import LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
 OBSTACLE_CM = float(os.environ.get("OBSTACLE_CM", "15"))
 FORWARD_MOVES = {"forward", "diag_forward_left", "diag_forward_right"}  # 초음파 센서는 앞에 있다
+# 끝의 / 는 브라우저가 보내는 Origin 에 없으므로 떼어 둔다
+CORS_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 STATIC = Path(__file__).parent / "static"
 
 
@@ -90,12 +96,16 @@ async def lifespan(app: FastAPI):
     global robot
     robot = Robot()
     await robot.start()
-    print(f"[robot] mode={robot.driver.mode} camera={robot.camera.kind} max_speed={MAX_SPEED}")
+    print(f"[robot] mode={robot.driver.mode} camera={robot.camera.kind} max_speed={MAX_SPEED} "
+          f"cors={CORS_ORIGINS or '없음'}")
     yield
     robot.close()
 
 
 app = FastAPI(title="Raspbot 조종 서버", lifespan=lifespan)
+if CORS_ORIGINS:
+    app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS,
+                       allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
 MoveAction = Literal[tuple(MOVES)]  # forward, backward, turn_left, ... (drivers.MOVES 참고)
 

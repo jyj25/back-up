@@ -26,6 +26,7 @@ Wants=network-online.target
 User=$USER
 WorkingDirectory=$ROBOT_DIR
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-$ROBOT_DIR/robot.env
 ExecStart=$VENV/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=3
@@ -37,6 +38,7 @@ EOF
     sudo systemctl enable --now raspbot
     echo "켰습니다. 다음부터 라즈베리파이를 켜면 조종 서버가 자동으로 뜹니다."
     echo "직접 uvicorn 을 실행할 때는 포트가 겹치니 먼저: sudo systemctl stop raspbot"
+    echo "설정(CORS_ORIGINS, MAX_SPEED 등)은 $ROBOT_DIR/robot.env 에 적고: sudo systemctl restart raspbot"
     ;;
   uninstall)
     sudo systemctl disable --now raspbot || true

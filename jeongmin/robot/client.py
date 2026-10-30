@@ -5,7 +5,7 @@
     bot.move("forward", speed=100, seconds=1.5)   # 1.5초 앞으로 (끝날 때까지 기다림)
     bot.beep(); bot.led("green")
     print(bot.distance())                         # 앞 거리 cm
-    bot.go("recycle")                              # 재활용 통 찾아가서 쏟고 출발점으로 (끝날 때까지 기다림)
+    bot.go("can")                                  # 캔 통 찾아가서 쏟고 출발점으로 (끝날 때까지 기다림)
 
 노트북에서 가짜 서버로 먼저 시험: ROBOT_MODE=fake uvicorn server.main:app --port 8000
 그리고 python client.py  → 간단한 동작 확인

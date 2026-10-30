@@ -12,7 +12,7 @@
   그 상태에서는 앞쪽 이동 명령을 받지 않는다 (뒤·옆·회전은 된다). 0 이면 끔.
 
 통 찾아가기 (stations.json 의 정류장마다 ArUco 마커):
-  POST /api/mission {"station": "recycle"} → 마커 찾아 다가가기 → 쏟기 → 출발점(home) 복귀
+  POST /api/mission {"station": "can"} → 마커 찾아 다가가기 → 쏟기 → 출발점(home) 복귀
   수동 이동·정지 명령이 오면 임무는 바로 취소된다.
 
 다른 웹(팀원 화면)에서 브라우저로 API 를 부르려면 CORS_ORIGINS 에 그 웹 주소를 쉼표로 적는다.

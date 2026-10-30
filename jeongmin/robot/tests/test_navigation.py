@@ -77,7 +77,7 @@ def test_full_mission_in_sim():
     robot.driver.dump = lambda: dumped_at.append(world.pose())
 
     async def run():
-        robot.mission.start("recycle")
+        robot.mission.start("can")
         await asyncio.wait_for(robot.mission.wait(), 20)
 
     try:
@@ -87,7 +87,7 @@ def test_full_mission_in_sim():
     st = robot.mission.state
     assert st["phase"] == "done", st
     (p,) = dumped_at
-    bx, by = SIM_LAYOUT[1]  # 재활용 통
+    bx, by = SIM_LAYOUT[1]  # 캔 통
     assert 0.15 < math.hypot(bx - p["x"], by - p["y"]) < 0.35   # 통 바로 앞에서 쏟음
     hx, hy = SIM_LAYOUT[0]
     end = world.pose()
@@ -99,11 +99,11 @@ def test_mission_fails_when_marker_missing():
     robot = main.Robot()
     clock = VirtualClock()
     robot.driver.world.set_clock(clock)
-    robot.driver.world.layout.pop(3)  # 비닐 통이 없음
+    robot.driver.world.layout.pop(3)  # 종이 통이 없음
     robot.mission.sleep = clock.sleep
 
     async def run():
-        robot.mission.start("vinyl")
+        robot.mission.start("paper")
         await asyncio.wait_for(robot.mission.wait(), 20)
 
     try:
@@ -117,14 +117,14 @@ def test_mission_fails_when_marker_missing():
 
 def test_mission_api_and_manual_override():
     with TestClient(main.app) as c:
-        assert set(c.get("/api/stations").json()) >= {"home", "recycle", "general", "vinyl"}
+        assert set(c.get("/api/stations").json()) >= {"home", "can", "pet", "paper"}
         seen = c.get("/api/markers").json()
         assert {m["id"] for m in seen["markers"]} == {1, 2, 3} and "pose" in seen  # 출발 자리에서 통 3개가 보임
         assert c.post("/api/mission", json={"station": "kitchen"}).status_code == 422
-        assert c.post("/api/mission", json={"station": "general"}).status_code == 202
+        assert c.post("/api/mission", json={"station": "pet"}).status_code == 202
         time.sleep(0.2)
         assert c.get("/api/mission").json()["running"] is True
-        assert c.post("/api/mission", json={"station": "vinyl"}).status_code == 409
+        assert c.post("/api/mission", json={"station": "paper"}).status_code == 409
         s = c.post("/api/move", json={"action": "backward", "duration_ms": 100}).json()  # 수동 조종 → 임무 취소
         assert s["moving"] == "backward" and s["mission"] == "cancelled"
         m = c.get("/api/mission").json()

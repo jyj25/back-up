@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>라즈봇 조종</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>라즈봇 조종</h1>
+    <span id="mode" class="badge">연결 중</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="cam"><img id="cam" alt="카메라" /><div id="cam-msg">카메라 없음</div></div>
+      <div class="readout">
+        <span>거리 <b id="dist">—</b> cm</span>
+        <span>라인 <b id="line">—</b></span>
+        <span>상태 <b id="moving">정지</b></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="pad">
+        <button data-move="diag_forward_left">↖</button>
+        <button data-move="forward">▲</button>
+        <button data-move="diag_forward_right">↗</button>
+        <button data-move="strafe_left">◀◀<small>옆</small></button>
+        <button id="stop" class="stop">■</button>
+        <button data-move="strafe_right"><small>옆</small>▶▶</button>
+        <button data-move="diag_backward_left">↙</button>
+        <button data-move="backward">▼</button>
+        <button data-move="diag_backward_right">↘</button>
+        <button data-move="turn_left">⟲ 회전</button>
+        <span></span>
+        <button data-move="turn_right">회전 ⟳</button>
+      </div>
+      <label>속도 <input id="speed" type="range" min="40" max="255" value="100" /> <b id="speed-v">100</b></label>
+      <p class="hint">버튼을 누르고 있는 동안만 움직입니다. 키보드: W/S 앞뒤, A/D 회전, Q/E 옆 이동, Space 정지</p>
+    </section>
+
+    <section class="card">
+      <label>카메라 좌우 <input id="pan" type="range" min="0" max="180" value="90" /> <b id="pan-v">90</b>°</label>
+      <label>카메라 위아래 <input id="tilt" type="range" min="0" max="110" value="90" /> <b id="tilt-v">90</b>°</label>
+      <div class="row">
+        <button id="beep">🔔 삐</button>
+        <select id="led">
+          <option value="">LED 끔</option>
+          <option>red</option><option>green</option><option>blue</option><option>yellow</option>
+          <option>purple</option><option>cyan</option><option>white</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>통 찾아가기</h2>
+      <div id="stations" class="stations"></div>
+      <label class="check"><input type="checkbox" id="m-dump" checked /> 도착하면 쏟기</label>
+      <label class="check"><input type="checkbox" id="m-home" checked /> 끝나면 출발점으로</label>
+      <div class="readout">
+        <span>임무 <b id="m-phase">대기</b></span>
+        <span id="m-msg"></span>
+      </div>
+      <div class="readout"><span>보이는 마커 <b id="m-seen">—</b></span></div>
+      <button id="m-cancel">임무 취소</button>
+      <p class="hint">통 앞면의 마커를 카메라로 찾아갑니다. 조종 버튼이나 정지를 누르면 임무가 바로 취소됩니다.</p>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

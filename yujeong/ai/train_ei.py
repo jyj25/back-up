@@ -1,6 +1,6 @@
 """Edge Impulse 업로드 + 학습 + 결과 확인 (표준 라이브러리만 사용).
 
-사용:  python train_ei.py upload  <dataset_dir>   # 폴더별(can/empty/paper/pet, general_trash 는 있으면) 업로드, 기존 샘플은 비활성화
+사용:  python train_ei.py upload  <dataset_dir>   # 폴더별(can/empty/paper/pet) 업로드
        python train_ei.py train                    # 임펄스 설정 + 특징 생성 + 학습
        python train_ei.py status                   # 정확도·혼동행렬·메모리 확인
        python train_ei.py test                     # 보관해 둔 테스트 세트로 평가
@@ -17,8 +17,8 @@ HERE = Path(__file__).resolve().parent
 ENV = HERE.parent / ".env"
 STUDIO = "https://studio.edgeimpulse.com/v1/api"
 INGEST = "https://ingestion.edgeimpulse.com/api"
-CLASSES = ["can", "empty", "general_trash", "paper", "pet"]
-OTHER = "general_trash"  # 캔·페트·종이·빈 트레이 외의 모든 것
+CLASSES = ["can", "empty", "paper", "pet"]
+OTHER = "general_trash"  # 캔·페트·종이·빈 트레이 외의 모든 것. 사진이 충분해지면 CLASSES 에 넣고 enable 한다(현재는 학습에서 제외)
 TEST_FRACTION = 0.2  # 클래스별로 가장 늦게 찍은 20% 는 테스트 세트
 
 
@@ -105,7 +105,8 @@ def adopt_old():
 
 def cmd_upload(ds):
     ds = Path(ds)
-    adopt_old()
+    if OTHER in CLASSES:
+        adopt_old()
     have = {s["filename"].rsplit(".", 1)[0] for c in ("training", "testing") for s in list_samples(c)}
     n = 0
     for cls in CLASSES:
@@ -171,6 +172,17 @@ def cmd_eval():
     return good, total
 
 
+def cmd_set_active(label, active):
+    """한 라벨의 샘플을 학습에서 제외(disable)하거나 다시 포함(enable)한다. 삭제하지 않는다."""
+    n = 0
+    for cat in ("training", "testing"):
+        for s in list_samples(cat):
+            if s["label"] == label and s["isDisabled"] == active:
+                call("POST", f"{P}/raw-data/{s['id']}/{'enable' if active else 'disable'}", {})
+                n += 1
+    print(f"{label}: {n}장 {'포함' if active else '제외'}")
+
+
 def cmd_wasm(out="tester"):
     """브라우저에서 모델을 돌리는 WebAssembly 배포본을 받아 tester/ 에 풀고, wasm 은 gzip+base64 JS 로 변환
     (file:// 로 열어도 fetch 없이 동작하게 하려는 것)."""
@@ -204,6 +216,8 @@ if __name__ == "__main__":
         cmd_upload(a[1])
     elif a[0] == "train":
         cmd_train(*a[1:4])
+    elif a[0] in ("disable", "enable"):
+        cmd_set_active(a[1], a[0] == "enable")
     elif a[0] == "eval":
         cmd_eval()
     elif a[0] == "wasm":

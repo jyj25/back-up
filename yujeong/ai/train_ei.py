@@ -17,8 +17,9 @@ HERE = Path(__file__).resolve().parent
 ENV = HERE.parent / ".env"
 STUDIO = "https://studio.edgeimpulse.com/v1/api"
 INGEST = "https://ingestion.edgeimpulse.com/api"
-CLASSES = ["can", "empty", "paper", "pet"]
-OTHER = "general_trash"  # 캔·페트·종이·빈 트레이 외의 모든 것. 사진이 충분해지면 CLASSES 에 넣고 enable 한다(현재는 학습에서 제외)
+CLASSES = ["can", "empty", "general_trash", "paper", "pet"]
+ADOPT_OLD = False  # 예전 airpod·안경집 사진을 general_trash 로 옮기는 임시 동작 (끔: 새 general_trash 사진을 직접 찍어 올림)
+OTHER = "general_trash"  # 캔·페트·종이·빈 트레이 외의 모든 것
 TEST_FRACTION = 0.2  # 클래스별로 가장 늦게 찍은 20% 는 테스트 세트
 
 
@@ -105,7 +106,7 @@ def adopt_old():
 
 def cmd_upload(ds):
     ds = Path(ds)
-    if OTHER in CLASSES:
+    if ADOPT_OLD:
         adopt_old()
     have = {s["filename"].rsplit(".", 1)[0] for c in ("training", "testing") for s in list_samples(c)}
     n = 0

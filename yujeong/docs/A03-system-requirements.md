@@ -3,7 +3,7 @@
 문서 ID: A03-SYS / 버전: 0.1 초안 (2026-10-30)
 근거: README.md(main), 선생님 공지, 교재 project-practice(A03 양식), Xiao.md
 표기: **사실** = README·공지에 있음 / **가정** = 작성자 제안, 팀 합의 전 / **미확인** = 확인 필요.
-AI 담당의 세부 요구는 `ai/docs/A03-requirements.md` 참고 (이 문서는 팀 전체).
+AI 담당의 세부 요구는 `yujeong/ai/docs/A03-requirements.md` 참고 (이 문서는 팀 전체).
 
 ## 1. 목적과 범위
 - 사용자: 분리수거를 헷갈리거나 귀찮아하는 사람. 장소: 시연 장소(교실) — 사실

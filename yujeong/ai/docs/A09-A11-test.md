@@ -4,7 +4,7 @@
 상태 값: NOT_RUN, PASS, FAIL, BLOCKED. 실제로 실행하지 않은 것은 PASS로 적지 않는다.
 
 ## A09 계획
-- 대상: 펌웨어 `yujeong/firmware/xiao_stream`, 수집기 `ai/collector/index.html`, (이후) EI 모델·추론 펌웨어
+- 대상: 펌웨어 `yujeong/firmware/xiao_stream`, 수집기 `yujeong/ai/collector/index.html`, (이후) EI 모델·추론 펌웨어
 - 환경: XIAO ESP32S3 Sense(OV3660), esp32 core 3.3.12, `PSRAM=opi`, Windows, Chrome/Edge
 - 제외: 서보·UNO·웹 대시보드 연동 (타 담당)
 
@@ -16,7 +16,7 @@
 | TC-03 | REQ-04 | 클래스별 50장 수집, 손 포함 | 개수·비율 기록 |
 | TC-04 | REQ-02 | 테스트 셋 평가 | 90% 이상 |
 | TC-05 | REQ-03 | 보드에서 추론 시간 측정 | 1초 이내 |
-| TC-06 | I-03 | 판정 로직에 가짜 점수열을 넣음 (`firmware/xiao_sorter/test_logic`) | 연속·확신도·격차·중복 방지·STUCK 기대대로 |
+| TC-06 | I-03 | 판정 로직에 가짜 점수열을 넣음 (`yujeong/firmware/xiao_sorter/test_logic`) | 연속·확신도·격차·중복 방지·STUCK 기대대로 |
 | TC-07 | REQ-05 | 오분류 반영 재학습 | v2 정확도 비교 기록 |
 
 ## A11 결과

@@ -1,3 +1,5 @@
 .env
 *.env
 secrets.h
+__pycache__/
+*.pyc

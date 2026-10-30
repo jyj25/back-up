@@ -22,8 +22,8 @@
 ## 모듈과 책임
 | 모듈 | 위치(예정 폴더) | 책임 |
 | --- | --- | --- |
-| 수집·학습 | `ai/` | 사진 수집기, Edge Impulse 학습 스크립트 |
-| 보드 펌웨어 | `firmware/xiao_sorter/` | 추론 + 서보 (영상 전달용은 `yujeong/firmware/xiao_stream/`) |
+| 수집·학습 | `yujeong/ai/` | 사진 수집기, Edge Impulse 학습 스크립트 |
+| 보드 펌웨어 | `yujeong/firmware/xiao_sorter/` | 추론 + 서보 (영상 전달용은 `yujeong/firmware/xiao_stream/`) |
 | UNO 패널 | `firmware/uno_panel/` | FND, RGB LED, IR 리모컨 |
 | 서버 | `server/` | 보드 중계, 통계 저장 (FastAPI 예정) |
 | 웹·앱 | `web/` | 대시보드 + 휴대폰 웹앱 |

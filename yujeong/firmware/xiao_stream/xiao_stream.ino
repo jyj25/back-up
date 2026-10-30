@@ -1,6 +1,6 @@
 // XIAO ESP32S3 Sense: 카메라 MJPEG 스트림 (사진 수집기용)
 // 보드가 Wi-Fi AP 를 만들고, 노트북이 여기에 접속해서 http://192.168.4.1/ 을 열면 수집 대시보드가 뜬다.
-//   :80 /          사진 수집 대시보드 (ai/collector, gen_assets.py 로 내장)
+//   :80 /          사진 수집 대시보드 (yujeong/ai/collector, gen_assets.py 로 내장)
 //   :81 /stream   MJPEG 스트림
 //   /capture  JPEG 한 장
 #include "esp_camera.h"

@@ -5,7 +5,7 @@
   python pi_reader.py /dev/ttyACM0        # 라즈봇
   python pi_reader.py COM4                # 노트북
 
-보드가 한 줄에 하나씩 이런 JSON 을 내보낸다고 가정한다 (docs/A07-interface.md IF-02):
+보드가 한 줄에 하나씩 이런 JSON 을 내보낸다고 가정한다 (yujeong/docs/A07-interface.md IF-02):
   {"class":"can","conf":0.93,"ms":173}   {"class":null,"conf":0.41,"ms":173}   {"error":"camera"}
 '{' 로 시작하지 않는 줄(부팅·디버그 로그)은 버린다. 10초 동안 아무 줄도 없으면 경고한다.
 """

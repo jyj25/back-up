@@ -15,6 +15,12 @@
   POST /api/mission {"station": "can"} → 마커 찾아 다가가기 → 쏟기 → 출발점(home) 복귀
   수동 이동·정지 명령이 오면 임무는 바로 취소된다.
 
+AI 판정 (분류 보드 → USB, 또는 POST /api/verdict) — sorter.py:
+  {"class":"can","conf":0.93} 이 오고 자동 출발이 켜져 있으면 can 통 임무를 시작한다.
+  자동 출발은 기본 꺼짐 (AUTO_SORT=1 또는 POST /api/sort {"auto": true}). 처리 기록은 GET /api/history.
+  BOARD_PORT=auto|none|/dev/ttyACM0  (실제 로봇 기본 auto, 가짜 모드 기본 none)
+  HISTORY_FILE=기록 파일 경로|none    (실제 로봇 기본 data/history.jsonl, 가짜 모드 기본 none)
+
 다른 웹(팀원 화면)에서 브라우저로 API 를 부르려면 CORS_ORIGINS 에 그 웹 주소를 쉼표로 적는다.
   예) CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5500"   (비워 두면 이 서버의 화면만 허용)
 """
@@ -28,15 +34,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .board import BoardReader
 from .camera import Camera
 from .drivers import LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
+from .sorter import Sorter, parse_line
 from .vision import CameraVision, NoVision, SimVision
 
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
@@ -49,6 +57,12 @@ STATIONS_FILE = Path(os.environ.get("STATIONS_FILE", Path(__file__).parent.paren
 _CONF = json.loads(STATIONS_FILE.read_text(encoding="utf-8"))
 STATIONS: dict = _CONF["stations"]
 NAV = NavConfig.from_dict(_CONF.get("nav", {}))
+MIN_CONFIDENCE = float(_CONF.get("sort", {}).get("min_confidence", 0.8))
+DEFAULT_HISTORY = Path(__file__).parent.parent / "data" / "history.jsonl"
+
+
+def _setting(name: str, real_default: str, fake: bool) -> str:
+    return os.environ.get(name, "none" if fake else real_default)
 
 
 class Robot:
@@ -64,12 +78,26 @@ class Robot:
         else:
             self.vision = NoVision()
         self.mission = Mission(self, STATIONS, NAV)
+        fake = self.driver.mode == "fake"
+        history = _setting("HISTORY_FILE", str(DEFAULT_HISTORY), fake)
+        self.sorter = Sorter(self, STATIONS, MIN_CONFIDENCE, auto=os.environ.get("AUTO_SORT") == "1",
+                             history_file=None if history.lower() == "none" else Path(history))
+        self.board = BoardReader(_setting("BOARD_PORT", "auto", fake), self._on_board_line)
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
         self.blocked = False  # 장애물 때문에 멈췄는지
 
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self._watchdog = asyncio.create_task(self._watch())
+        self.board.start()
+
+    def _on_board_line(self, line: str) -> None:
+        """보드 읽기 스레드에서 불린다 → 판정 처리는 이벤트 루프로 넘긴다"""
+        obj = parse_line(line)
+        if obj is not None and self._loop:
+            self._loop.call_soon_threadsafe(self.sorter.handle, obj, "board")
 
     async def _watch(self) -> None:
         tick = 0
@@ -100,6 +128,7 @@ class Robot:
         self._stop_at = time.monotonic() + duration_ms / 1000
 
     def close(self) -> None:
+        self.board.stop()
         if self._watchdog:
             self._watchdog.cancel()
         self.driver.close()
@@ -115,7 +144,7 @@ async def lifespan(app: FastAPI):
     robot = Robot()
     await robot.start()
     print(f"[robot] mode={robot.driver.mode} camera={robot.camera.kind} max_speed={MAX_SPEED} "
-          f"cors={CORS_ORIGINS or '없음'}")
+          f"cors={CORS_ORIGINS or '없음'} board={robot.board.want} auto_sort={robot.sorter.auto}")
     yield
     await robot.mission.abort("서버 종료")
     robot.close()
@@ -154,12 +183,21 @@ class MissionIn(BaseModel):
     return_home: bool = Field(default=True, description="끝나면 출발점(home)으로")
 
 
+class SortIn(BaseModel):
+    auto: bool = Field(description="AI 판정이 오면 자동으로 출발할지")
+
+
+class ResetIn(BaseModel):
+    station: Literal[tuple(n for n in STATIONS if n != "home")] | None = None  # type: ignore[valid-type]  None 이면 모든 통
+
+
 @app.get("/api/status")
 def status():
     s = robot.driver.state
     return {"mode": s.mode, "moving": s.moving, "speed": s.speed, "pan": s.pan, "tilt": s.tilt,
             "led": s.led, "camera": robot.camera.kind, "max_speed": MAX_SPEED,
-            "blocked": robot.blocked, "obstacle_cm": OBSTACLE_CM, "mission": robot.mission.state["phase"]}
+            "blocked": robot.blocked, "obstacle_cm": OBSTACLE_CM, "mission": robot.mission.state["phase"],
+            "auto_sort": robot.sorter.auto}
 
 
 @app.post("/api/move")
@@ -223,20 +261,51 @@ async def markers():
 async def mission_start(body: MissionIn):
     if robot.mission.running:
         raise HTTPException(status_code=409, detail="이미 임무 중입니다. 먼저 /api/mission/cancel")
-    robot.mission.start(body.station, body.dump, body.return_home)
+    robot.sorter.start(body.station, by="web", dump=body.dump, return_home=body.return_home)
     return robot.mission.state
 
 
 @app.get("/api/mission")
 def mission_state():
+    cur = robot.sorter.current or {}
     return {**robot.mission.state, "running": robot.mission.running,
-            "seen": [m.to_dict() for m in robot.mission.seen]}
+            "seen": [m.to_dict() for m in robot.mission.seen],
+            "label": cur.get("label"), "confidence": cur.get("confidence"), "by": cur.get("by")}
 
 
 @app.post("/api/mission/cancel")
 async def mission_cancel():
     await robot.mission.abort()
     return mission_state()
+
+
+@app.post("/api/verdict")
+async def verdict(obj: dict = Body(..., examples=[{"class": "can", "conf": 0.93, "ms": 173}])):
+    """보드와 같은 판정 JSON 을 HTTP 로 넣는다 (시험용, 또는 다른 분류기)"""
+    return robot.sorter.handle(obj, source="api")
+
+
+@app.get("/api/sort")
+def sort_state():
+    return {"auto": robot.sorter.auto, "min_confidence": robot.sorter.min_confidence,
+            "board": robot.board.status(), "last_verdict": robot.sorter.last_verdict}
+
+
+@app.post("/api/sort")
+def sort_set(body: SortIn):
+    robot.sorter.auto = body.auto
+    return sort_state()
+
+
+@app.get("/api/history")
+def history():
+    return robot.sorter.history()
+
+
+@app.post("/api/history/reset")
+def history_reset(body: ResetIn):
+    robot.sorter.reset(body.station)
+    return robot.sorter.history()
 
 
 @app.get("/api/camera.jpg")

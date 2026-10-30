@@ -6,6 +6,9 @@
     "pet":   {"marker": 2, "label": "페트"},
     "paper": {"marker": 3, "label": "종이"}
   },
+  "sort": {
+    "min_confidence": 0.8
+  },
   "nav": {
     "speed": 70,
     "turn_speed": 60,

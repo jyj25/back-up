@@ -19,7 +19,7 @@ jeongmin/
     ├── server/             FastAPI 조종 서버 + 조종 화면(static/)
     │   ├── main.py         API, 자동 정지 타이머
     │   ├── drivers.py      RealDriver(raspbot 라이브러리) / FakeDriver(하드웨어 없이)
-    │   ├── camera.py       카메라 모듈 3(picamera2) → USB 웹캠(OpenCV) → 없음
+    │   ├── camera.py       카메라 모듈 3(picamera2) → USB 카메라(라즈봇 기본, OpenCV) → 없음
     │   ├── vision.py       ArUco 마커 찾기
     │   ├── navigator.py    통 찾아가기 → 쏟기 → 출발점 복귀
     │   └── sim.py          가짜 모드용 2D 세계 (노트북에서 찾아가기 시험)

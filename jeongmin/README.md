@@ -88,8 +88,8 @@ bash scripts/autostart.sh install   # 전원만 켜면 조종 서버가 뜨게 (
 ## 통 찾아가기 (분리수거)
 
 ```
-물건 싣기 → (C270 + AI) 종류 판단 → POST /api/mission {"station": "recycle"}
-         → 재활용 마커 찾기 → 다가가기 → 쏟기 → 뒤로 빠지기 → 출발점(home) 마커로 복귀
+물건 싣기 → (C270 + AI) 종류 판단 → POST /api/mission {"station": "can"}
+         → 캔 통 마커 찾기 → 다가가기 → 쏟기 → 뒤로 빠지기 → 출발점(home) 마커로 복귀
 ```
 - 통마다 **ArUco 마커**(번호표)를 붙인다: `markers/markers.html` 인쇄, 한 변 10cm, 통 앞면 로봇 카메라 높이(약 15cm).
 - 이름·마커 번호·속도 등 설정은 `stations.json`. 통을 늘리면 여기에 추가하고 `python scripts/make_markers.py`.
@@ -113,8 +113,8 @@ bash scripts/autostart.sh install   # 전원만 켜면 조종 서버가 뜨게 (
 | POST | `/api/led` | `{"color": "red"\|"green"\|"blue"\|"yellow"\|"purple"\|"cyan"\|"white"\|null}` |
 | GET | `/api/camera.jpg` | 사진 한 장 (카메라 없으면 503) |
 | GET | `/api/stream` | MJPEG 실시간 영상 (`<img src>` 로 바로 표시) |
-| GET | `/api/stations` | 정류장 목록 `{"recycle": {"marker": 1, "label": "재활용"}, ...}` |
-| POST | `/api/mission` | `{"station": "recycle", "dump": true, "return_home": true}` → 202, 백그라운드로 시작 (이미 하는 중이면 409) |
+| GET | `/api/stations` | 정류장 목록 `{"can": {"marker": 1, "label": "캔"}, ...}` — 통 이름 = AI 분류 이름 |
+| POST | `/api/mission` | `{"station": "can", "dump": true, "return_home": true}` → 202, 백그라운드로 시작 (이미 하는 중이면 409) |
 | GET | `/api/mission` | `phase` (search·align·approach·arrived·dumping·backing·done·failed·cancelled), `message`, `running`, `seen` |
 | POST | `/api/mission/cancel` | 임무 취소 + 정지 |
 | GET | `/api/markers` | 지금 보이는 마커 `[{id, cx(-1 왼쪽~+1 오른쪽), size(화면 너비 대비)}]` |
@@ -130,7 +130,7 @@ from client import RobotClient
 bot = RobotClient("http://<라즈베리파이 IP>:8000")
 bot.move("forward", speed=100, seconds=2)   # 2초 앞으로, 끝나면 정지 (3초 넘어도 됨)
 bot.servo(pan=60); bot.snapshot("now.jpg")   # 카메라 돌려서 사진 저장 → AI 인식에 사용
-result = bot.go("vinyl")                      # 비닐 통까지 가서 쏟고 복귀, 끝날 때까지 기다림
+result = bot.go("paper")                      # 종이 통까지 가서 쏟고 복귀, 끝날 때까지 기다림
 print(result["phase"])                        # done / failed / cancelled
 if bot.distance() < 20: bot.beep()
 ```

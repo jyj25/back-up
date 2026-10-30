@@ -91,11 +91,11 @@ def adopt_old():
     have = {s["filename"] for c in ("training", "testing") for s in list_samples(c)}
     for cat in ("training", "testing"):
         for s in list_samples(cat):
-            if s["label"] in CLASSES:
+            if s["label"] in CLASSES or s["isDisabled"] and f"{OTHER}.old{s['id']}" in have:
                 continue
-            img = call("GET", f"{P}/raw-data/{s['id']}/image", raw=True)
             name = f"{OTHER}.old{s['id']}.jpg"
-            if name not in have:
+            if name not in have and name.rsplit(".", 1)[0] not in have:
+                img = call("GET", f"{P}/raw-data/{s['id']}/image", raw=True)
                 body, ct = multipart({}, name, img)
                 call("POST", f"{INGEST}/{cat}/files", body, {"Content-Type": ct, "x-label": OTHER})
                 n += 1
@@ -139,18 +139,36 @@ def job_wait(job_id, label):
         time.sleep(5)
 
 
-def cmd_train(cycles=50):
+def cmd_train(cycles=50, lr=None, dropout=None):
     imp = call("GET", f"{P}/impulse")["impulse"]
     learn = imp["learnBlocks"][0]["id"]
     dsp = imp["dspBlocks"][0]["id"]
-    # 파라미터는 기존 값(MobileNetV2 0.35 96x96, 증강 all, 클래스 가중치 자동)을 유지하고 학습 횟수만 지정
-    call("POST", f"{P}/training/keras/{learn}", {"trainingCycles": cycles})
+    # 기본은 기존 값(MobileNetV2 0.35 96x96, 증강 all, 클래스 가중치 자동)을 유지하고 지정한 것만 바꾼다
+    cfg = {"trainingCycles": int(cycles)}
+    if lr is not None:
+        cfg["learningRate"] = float(lr)
+    if dropout is not None:
+        cfg["visualLayers"] = [{"type": "transfer_mobilenetv2_a35", "neurons": 16, "dropoutRate": float(dropout)}]
+    call("POST", f"{P}/training/keras/{learn}", cfg)
     j = call("POST", f"{P}/jobs/generate-features",
              {"dspId": dsp, "calculateFeatureImportance": False, "skipFeatureExplorer": True})
     job_wait(j["id"], "특징 생성")
-    j = call("POST", f"{P}/jobs/train/keras/{learn}", {"mode": "visual", "trainingCycles": cycles})
+    j = call("POST", f"{P}/jobs/train/keras/{learn}", {"mode": "visual", "trainingCycles": int(cycles)})
     job_wait(j["id"], "학습")
-    cmd_status()
+
+
+def cmd_eval():
+    """학습에 안 쓴 테스트 세트로 평가하고 혼동행렬을 출력한다."""
+    j = call("POST", f"{P}/jobs/evaluate", {})
+    job_wait(j["id"], "테스트 평가")
+    r = call("GET", f"{P}/classify/all/result?variant=int8")
+    acc = r["accuracy"]
+    good = acc["totalSummary"]["good"]
+    total = good + acc["totalSummary"]["bad"]
+    print(f"테스트 정확도 {good}/{total}")
+    for t, row in acc["confusionMatrixValues"].items():
+        print(f"  {t:14s}", {k: v for k, v in row.items() if v})
+    return good, total
 
 
 def cmd_wasm(out="tester"):
@@ -185,10 +203,10 @@ if __name__ == "__main__":
     if a[0] == "upload":
         cmd_upload(a[1])
     elif a[0] == "train":
-        cmd_train(*(int(x) for x in a[1:2]))
+        cmd_train(*a[1:4])
+    elif a[0] == "eval":
+        cmd_eval()
     elif a[0] == "wasm":
         cmd_wasm(*a[1:2])
-    elif a[0] == "status":
-        cmd_status()
     else:
         sys.exit(__doc__)

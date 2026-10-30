@@ -4,7 +4,7 @@
        python train_ei.py train                    # 임펄스 설정 + 특징 생성 + 학습
        python train_ei.py status                   # 정확도·혼동행렬·메모리 확인
        python train_ei.py test                     # 보관해 둔 테스트 세트로 평가
-       python train_ei.py download <out.zip>       # Arduino 라이브러리 내려받기
+       python train_ei.py wasm                     # 브라우저 테스트용 모델(tester/) 내려받기
 
 키는 yujeong/.env 의 EI_API_KEY 에서 읽고 출력하지 않는다.
 검증 세트를 시간 순으로 나누는 이유: 연사로 찍은 사진은 서로 거의 같아서
@@ -153,6 +153,22 @@ def cmd_train(cycles=50):
     cmd_status()
 
 
+def cmd_wasm(out="tester"):
+    """브라우저에서 모델을 돌리는 WebAssembly 배포본을 받아 tester/ 에 풀고, wasm 은 gzip+base64 JS 로 변환
+    (file:// 로 열어도 fetch 없이 동작하게 하려는 것)."""
+    import base64, gzip, io, zipfile
+    out = Path(out) if Path(out).is_absolute() else HERE / out
+    j = call("POST", f"{P}/jobs/build-ondevice-model?type=wasm", {"engine": "tflite", "modelType": "int8"})
+    job_wait(j["id"], "WASM 빌드")
+    z = zipfile.ZipFile(io.BytesIO(call("GET", f"{P}/deployment/download?type=wasm&modelType=int8", raw=True)))
+    out.mkdir(exist_ok=True)
+    for n in ("edge-impulse-standalone.js", "run-impulse.js"):
+        (out / n).write_bytes(z.read("browser/" + n))
+    gz = gzip.compress(z.read("browser/edge-impulse-standalone.wasm"), 9)
+    (out / "model-wasm.js").write_text("window.MODEL_WASM_GZ_B64='" + base64.b64encode(gz).decode() + "';" + chr(10))
+    print("저장:", out)
+
+
 def cmd_status():
     imp = call("GET", f"{P}/impulse")["impulse"]
     learn = imp["learnBlocks"][0]["id"]
@@ -170,6 +186,8 @@ if __name__ == "__main__":
         cmd_upload(a[1])
     elif a[0] == "train":
         cmd_train(*(int(x) for x in a[1:2]))
+    elif a[0] == "wasm":
+        cmd_wasm(*a[1:2])
     elif a[0] == "status":
         cmd_status()
     else:

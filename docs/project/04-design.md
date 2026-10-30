@@ -20,7 +20,7 @@
 | 대시보드 | 상태·기록·통계 | 노트북 브라우저 | `minhyeong/` (예정) |
 
 - **보드는 Wi-Fi 없이 USB 로만** 로봇에 연결. 웹으로 가는 기록은 로봇이 대신 제공한다 (AI 원본 ADR-02 ③ 과 같은 방향).
-- **저장**: 처리 기록은 로봇 서버가 보관 (IF-04, 예정). 원격 DB 는 쓰지 않는 쪽으로 제안 (서민형과 합의 필요).
+- **저장**: 처리 기록은 로봇 서버가 보관 (IF-04). 원격 DB 는 쓰지 않음.
 - **경계**: 인터넷 없이 핫스팟 안에서 동작. 배포된(https) 사이트에서 로봇 접속은 브라우저가 막으므로 대시보드는 노트북 `http://localhost` 로 실행.
 - **같은 USB 포트 공유**: 보드를 라즈베리파이에 꽂으면 노트북 수집기(Web Serial)와 동시에 쓸 수 없다 → 사진 수집은 보드를 노트북에 직접 연결해서.
 
@@ -54,8 +54,9 @@
 - 판정: `{"class":"can","conf":0.93,"ms":173}` / 판정 없음: `{"class":null,"conf":0.41,"ms":173}` / 오류: `{"error":"camera"}`
 - 받는 쪽은 `{` 로 시작하지 않는 줄(부팅·디버그 로그)과 해석 안 되는 줄을 버린다.
 - 값 없음은 `null`, 0 으로 채우지 않는다.
-- **쟁점 (11/1 전 결정)**: 로봇은 "확정" 만 받아야 한다. ① 보드가 확정일 때만 JSON 을 보낸다 / ② 매 프레임 보내고 확정 줄에 `"event":"decision"` 을 붙인다 — 둘 중 하나로 정한다. STUCK 을 보낼지도 함께.
-- 라즈베리파이 쪽: 포트는 보통 `/dev/ttyACM0`, 읽기 권한(`dialout` 그룹) 확인 필요. 수신 코드는 **미구현** (TASK-R4). 확인용 `yujeong/firmware/xiao_sorter/pi_reader.py` 있음.
+- **확정 신호**: AI 원본(A03 I-03)대로 조건 미달은 `class: null` 이므로 **`class` 가 있으면 확정**으로 본다. 보드가 매 프레임을 보내는 방식으로 바뀌면 확정 줄에 `"event":"decision"` 을 붙인다 — 로봇은 `event` 가 있으면 `decision` 일 때만 출발 (두 방식 모두 수용, 최종 방식은 AI 담당이 정함). STUCK 등 다른 `event` 는 무시.
+- 로봇 출발 조건: 자동 출발 켜짐(기본 꺼짐) · 임무 중 아님 · `class` 가 통 이름(`can/pet/paper`) · `conf` ≥ 0.8. 거절 이유는 `GET /api/sort` 의 `last_verdict.result`.
+- 라즈베리파이 쪽: 포트 `BOARD_PORT=auto`(`/dev/ttyACM*`), 뽑히면 2초마다 다시 찾음. 권한 오류면 `dialout` 그룹. 수신 구현 완료(TASK-R4, `jeongmin/robot/server/board.py`·`sorter.py`). 확인용 `yujeong/firmware/xiao_sorter/pi_reader.py` 도 있음.
 
 **IF-02 로봇 HTTP API (구현됨, 원본 `jeongmin/README.md`)**
 - 이동: `POST /api/move {action, speed, duration_ms}`, `POST /api/stop`
@@ -68,8 +69,13 @@
 - `home`=마커 0, `can`=1, `pet`=2, `paper`=3 (10/30 ADR-05 반영). 마커 DICT_4X4_50, 한 변 10cm, 통 앞면 카메라 높이(약 15cm).
 - 판정 `class` 가 그대로 통 이름. `empty`·`null` 은 통이 없으므로 로봇이 움직이지 않는다.
 
-**IF-04 처리 기록 API (예정)**
-- `GET /api/history` → `[{time, class, conf, station, result}]` + 통별 개수. 형식은 서민형과 합의 후 고정.
+**IF-04 처리 기록 API (구현됨 — 서민형 제안 형식, 통 이름만 can/pet/paper)**
+- `GET /api/history` → `{"bins": {"can": 3, "pet": 1, "paper": 0}, "items": [{id, time, label, confidence, by, result, seconds, steps, message}]}`
+  - `by`: `ai`(판정으로 출발) / `web`(통 버튼·`POST /api/mission`, `confidence: null`). `result`: `done`/`failed`/`cancelled`. `bins` 는 `done` 만 센다.
+- `POST /api/history/reset {"station": "can"}` 통 비우기 (빼면 전부) — 개수만 0, 기록은 남음.
+- `GET /api/mission` 에 지금 임무의 `label`·`confidence`·`by` 포함.
+- 실제 로봇은 `data/history.jsonl` 에 저장해 서버를 다시 켜도 이어짐 (가짜 모드는 저장 안 함).
+- 대시보드(`http://localhost:8765`)는 로봇 실행 때 `CORS_ORIGINS` 에 등록 (`robot.env.example`).
 
 **IF-05 보드 → PC 영상 (수집용, 구현됨 — AI 원본 IF-01)**
 - PC 가 `C` 1바이트 → `AA 55 AA 55` + 길이(u32 LE) + JPEG(VGA). 2초 안에 없으면 응답 없음. 보조로 보드 Wi-Fi AP 대시보드.

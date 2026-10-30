@@ -90,6 +90,18 @@ class RobotClient:
     def cancel_mission(self) -> dict:
         return self._call("POST", "/api/mission/cancel")
 
+    def history(self) -> dict:
+        """처리 기록: {"bins": {"can": 3, ...}, "items": [{time, label, confidence, by, result, seconds, steps, message}]}"""
+        return self._call("GET", "/api/history")
+
+    def set_auto(self, on: bool) -> dict:
+        """AI 판정이 오면 자동으로 출발할지"""
+        return self._call("POST", "/api/sort", {"auto": on})
+
+    def verdict(self, label: str | None, conf: float = 1.0) -> dict:
+        """보드 대신 판정을 넣는다 (시험용, 또는 노트북 분류기). 형식은 보드 판정 JSON 과 같다."""
+        return self._call("POST", "/api/verdict", {"class": label, "conf": conf})
+
     def snapshot(self, path: str = "snapshot.jpg") -> str:
         """카메라 사진 한 장을 파일로 저장 (AI 역할이 인식에 쓸 때)"""
         with urllib.request.urlopen(self.base + "/api/camera.jpg", timeout=self.timeout) as r:

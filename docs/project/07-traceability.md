@@ -2,12 +2,12 @@
 
 | 요구 | 설계·계약·결정 | 작업 | 시험 | 현재 근거 (10/30) |
 | --- | --- | --- | --- | --- |
-| REQ-01 분류·확정 | DES-01 / IF-01 / ADR-02, ADR-05 | TASK-A3~A9, R4, R10 | TC-17 (로직) / TC-08, 13, 18 | 로직 PASS · 모델 BLOCKED |
+| REQ-01 분류·확정 | DES-01 / IF-01 / ADR-02, ADR-05 | TASK-A3~A9, R4, R10 | TC-17 (로직), TC-13 (가짜 입력) / TC-08, 18 | 로직·수신 PASS · 모델 BLOCKED |
 | REQ-02 통 찾아가기·복귀 | DES-01, 02 / IF-02, 03 / ADR-01, 03 | TASK-R2, R7, R10 | TC-04~06, 15 (가짜) / TC-09 | 가짜 PASS · 실기 BLOCKED |
 | REQ-03 안전 | DES-02 / IF-02 | TASK-R1, R7 | TC-01~03, 07 (가짜) / TC-10 | 가짜 PASS · 실기 BLOCKED |
 | REQ-04 수동 조종·분류 | DES-03 / IF-02 | TASK-R1 | TC-07 / TC-11 | 가짜 PASS · 실기 BLOCKED |
 | REQ-05 통에 넣기 | ADR-04 (미결정) | TASK-R6 | 결정 후 작성 | 미정 |
-| REQ-06 기록·대시보드 | DES-04 / IF-02, IF-04 (예정) | TASK-R5, W1~W3 | TC-14 | NOT_RUN |
+| REQ-06 기록·대시보드 | DES-04 / IF-02, IF-04 | TASK-R5, W1~W3 | TC-14 | API PASS · 대시보드 NOT_RUN |
 | REQ-07 발표장 연결 | DES-01 | TASK-R3, R8 | TC-12 | BLOCKED |
 | REQ-08 가득 참 알림 (선택) | ADR-06 (미결정) | TASK-W3 | 결정 후 작성 | 미정 |
 | REQ-09 사진 수집 | IF-05 | TASK-A1, A2, A6, R9 | TC-16 / TC-19 | 영상 PASS · 수집 흐름 NOT_RUN |

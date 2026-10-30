@@ -83,6 +83,17 @@ async function loadStations() {
   }
 }
 $('m-cancel').addEventListener('click', () => api('POST', '/api/mission/cancel'));
+$('auto-sort').addEventListener('change', () => api('POST', '/api/sort', { auto: $('auto-sort').checked }));
+
+async function pollSort() {
+  const s = await api('GET', '/api/sort');
+  if (document.activeElement !== $('auto-sort')) $('auto-sort').checked = s.auto;
+  const v = s.last_verdict;
+  $('v-last').textContent = !v ? '없음'
+    : v.class ? `${v.class} ${Math.round((v.conf ?? 0) * 100)}% → ${v.result}` : `${v.error ? '오류 ' + v.error : '판정 없음'}`;
+  const b = s.board;
+  $('v-board').textContent = b.want === 'none' ? '사용 안 함' : b.port ? `연결 ${b.port}` : (b.error ?? '찾는 중');
+}
 
 async function pollMission() {
   const m = await api('GET', '/api/mission');
@@ -104,6 +115,7 @@ async function poll() {
     $('dist').textContent = (await api('GET', '/api/distance')).cm;
     $('line').textContent = (await api('GET', '/api/line')).sensors.map((x) => (x ? '●' : '○')).join('');
     await pollMission();
+    await pollSort();
   } catch {
     $('mode').textContent = '연결 끊김';
     $('mode').className = 'badge';

@@ -171,3 +171,27 @@ def test_mission_api_and_manual_override():
         assert s["moving"] == "backward" and s["mission"] == "cancelled"
         m = c.get("/api/mission").json()
         assert m["running"] is False and m["message"] == "수동 조종"
+
+
+def test_marker_lost_when_close_counts_as_arrived():
+    # 크게 보이던 마커가 한 걸음 뒤 사라짐 → 화면 아래로 빠진 것 → 도착 (둘러보지 않음)
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    target = main.STATIONS["can"]["marker"]
+    big = robot.mission.cfg.arrive_size * 0.8
+    frames = iter([[Marker(target, 0.0, big)]])
+    robot.vision.markers = lambda: next(frames, [])
+    moves = []
+    robot.move = lambda action, speed, ms: moves.append(action)
+
+    async def run():
+        robot.mission.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "done"
+    assert moves == ["forward"] and robot.driver.state.pan == 90

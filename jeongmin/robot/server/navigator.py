@@ -30,6 +30,7 @@ class NavConfig:
     arrive_size: float = 0.3  # 마커가 화면 너비의 이만큼이면 도착
     arrive_cm: float = 25     # 가운데를 보고 있고 초음파가 이보다 가까우면 도착
     search_steps: int = 40    # 이만큼 돌아도 못 찾으면 실패 (250ms × 40 ≈ 한 바퀴 반)
+    lost_near: float = 0.6    # 마커가 arrive_size 의 이만큼 이상 컸다가 사라지면 도착 (가까워져 화면 아래로 빠짐)
     look_angles: list[int] = field(default_factory=lambda: [50, 130, 20, 160])  # 둘러볼 카메라 각도 (90 정면, 클수록 왼쪽)
     look_every: int = 12      # 회전하며 찾는 중 이만큼마다 다시 둘러본다
     look_settle_ms: int = 400 # 카메라를 돌린 뒤 화면이 안정될 때까지
@@ -154,7 +155,7 @@ class Mission:
     async def _go(self, name: str) -> None:
         cfg, info = self.cfg, self.stations[name]
         self.state["target"] = name
-        last_cx, searched = 0.0, 0
+        last_cx, last_size, searched = 0.0, 0.0, 0
         for _ in range(cfg.step_limit):
             self.seen = await asyncio.to_thread(self.robot.vision.markers)
             cm = await asyncio.to_thread(self.robot.driver.distance_cm)
@@ -162,6 +163,11 @@ class Mission:
             self.state["steps"] += 1
             self._set(step.phase, f"{info['label']} (마커 {info['marker']})")
             if step.phase == "arrived":
+                await self._stop()
+                return
+            if step.phase == "search" and searched == 0 and last_size >= cfg.arrive_size * cfg.lost_near:
+                # 바로 전 걸음에 크게 보였는데 사라짐 = 너무 가까워 화면 밖 (카메라가 정면 고정이라 낮은 마커는 아래로 빠진다)
+                self._set("arrived", f"{info['label']} (마커 {info['marker']}) 가까워서 안 보임 → 도착")
                 await self._stop()
                 return
             if step.phase == "search":
@@ -175,7 +181,8 @@ class Mission:
                     raise NavError(f"{info['label']} 마커 {info['marker']} 번을 못 찾았습니다")
             else:
                 searched = 0
-                last_cx = next(m.cx for m in self.seen if m.id == info["marker"])
+                m = next(m for m in self.seen if m.id == info["marker"])
+                last_cx, last_size = m.cx, m.size
             # 서버 자동 정지는 여유 있게, 실제 정지는 여기서 직접
             self.robot.move(step.action, step.speed, step.ms + 300)
             if self.robot.blocked:

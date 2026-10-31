@@ -131,6 +131,30 @@ def test_mission_fails_when_marker_missing():
     assert robot.mission.state["phase"] == "failed" and "못 찾았" in robot.mission.state["message"]
 
 
+def test_look_around_turns_toward_marker():
+    # 정면에선 안 보이고 카메라를 오른쪽(50°)으로 돌렸을 때만 보이면 → 오른쪽으로 회전 (기본은 왼쪽), 카메라는 정면으로 복귀
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    target = main.STATIONS["pet"]["marker"]
+    robot.vision.markers = lambda: [Marker(target, 0.0, 0.1)] if robot.driver.state.pan == 50 else []
+    turns = []
+    robot.move = lambda action, speed, ms: turns.append(action)
+
+    async def run():
+        robot.mission.start("pet", dump=False, return_home=False)
+        while len(turns) < 2:
+            await asyncio.sleep(0)
+        robot.mission.cancel()
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert turns[:2] == ["turn_right", "turn_right"]
+    assert robot.driver.state.pan == 90
+
+
 # ---- API ----
 
 def test_mission_api_and_manual_override():

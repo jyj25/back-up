@@ -6,7 +6,8 @@
   Mission   : decide() 를 반복해서 실제로 움직이는 백그라운드 작업
 
 한 걸음 판단
-  목표 마커가 안 보임        → search   : 마지막으로 본 쪽으로 제자리 회전
+  목표 마커가 안 보임        → look     : 몸은 두고 카메라만 좌우로 돌려 찾아본다 (찾으면 그쪽으로 회전)
+                               search   : 그래도 없으면 마지막으로 본 쪽으로 제자리 회전 (가끔 다시 둘러봄)
   가운데에서 벗어남          → align    : 그쪽으로 조금 회전 (많이 벗어날수록 길게)
   가운데 + 아직 멂           → approach : 앞으로 조금
   마커가 충분히 큼 / 초음파 가까움 → arrived
@@ -14,7 +15,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 from .vision import Marker
 
@@ -29,6 +30,9 @@ class NavConfig:
     arrive_size: float = 0.3  # 마커가 화면 너비의 이만큼이면 도착
     arrive_cm: float = 25     # 가운데를 보고 있고 초음파가 이보다 가까우면 도착
     search_steps: int = 40    # 이만큼 돌아도 못 찾으면 실패 (250ms × 40 ≈ 한 바퀴 반)
+    look_angles: list[int] = field(default_factory=lambda: [50, 130, 20, 160])  # 둘러볼 카메라 각도 (90 정면, 클수록 왼쪽)
+    look_every: int = 12      # 회전하며 찾는 중 이만큼마다 다시 둘러본다
+    look_settle_ms: int = 400 # 카메라를 돌린 뒤 화면이 안정될 때까지
     step_limit: int = 300     # 한 정류장까지 최대 걸음 수
     backup_ms: int = 600      # 쏟은 뒤 뒤로 빠지는 시간
 
@@ -130,6 +134,23 @@ class Mission:
             await self._stop()
             raise
 
+    async def _look_around(self, info: dict) -> float | None:
+        """몸은 두고 카메라만 돌려 목표 마커를 찾는다 → 오른쪽이면 +1, 왼쪽이면 -1, 없으면 None"""
+        self._set("look", f"{info['label']} (마커 {info['marker']}) 둘러보는 중")
+        found = None
+        try:
+            for pan in self.cfg.look_angles:
+                await asyncio.to_thread(self.robot.driver.set_servo, pan, None)
+                await self.sleep(self.cfg.look_settle_ms / 1000)
+                self.seen = await asyncio.to_thread(self.robot.vision.markers)
+                if any(m.id == info["marker"] for m in self.seen):
+                    found = -1.0 if pan > 90 else 1.0  # 각도가 크면 왼쪽을 보고 있다
+                    break
+        finally:
+            await asyncio.to_thread(self.robot.driver.set_servo, 90, None)  # 다시 정면
+            await self.sleep(self.cfg.look_settle_ms / 1000)
+        return found
+
     async def _go(self, name: str) -> None:
         cfg, info = self.cfg, self.stations[name]
         self.state["target"] = name
@@ -144,6 +165,11 @@ class Mission:
                 await self._stop()
                 return
             if step.phase == "search":
+                if searched % cfg.look_every == 0:
+                    side = await self._look_around(info)
+                    if side is not None:
+                        last_cx = side
+                        step = decide([], info["marker"], cm, cfg, last_cx)  # 찾은 쪽으로 회전
                 searched += 1
                 if searched > cfg.search_steps:
                     raise NavError(f"{info['label']} 마커 {info['marker']} 번을 못 찾았습니다")

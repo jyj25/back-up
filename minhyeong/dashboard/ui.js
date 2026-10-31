@@ -69,29 +69,38 @@ const UI = (() => {
     };
   }
 
-  // ── 2. AI 분류 결과 (ESP32 → 라즈베리파이: 같은 결과 3번 연속 + 0.8 이상일 때만 "RESULT recycle 0.93") ──
+  // ── 2. AI 분류 결과 (분류 보드 → USB → 라즈베리파이의 마지막 판정, GET /api/sort 의 last_verdict) ──
   function ai(el) {
     el.innerHTML = `
       <p class="text-xs text-[var(--mute)]">AI 분류 결과 · 마지막 판정</p>
       <p class="cls font-wide font-extrabold text-4xl sm:text-5xl leading-none tracking-tight mt-2" aria-live="polite">—</p>
       <div class="mt-4 h-2 rounded-full bg-[var(--line)] overflow-hidden"><i class="cb block h-full bg-[var(--accent)] origin-left transition-transform duration-500" style="transform:scaleX(0)"></i></div>
-      <div class="mt-1 flex justify-between text-[11px] text-[var(--mute)]"><span>확신도</span><span>보내는 기준 80%</span></div>
+      <div class="mt-1 flex justify-between text-[11px] text-[var(--mute)]"><span>확신도</span><span class="th">출발 기준 —</span></div>
       <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <div><dt class="text-xs text-[var(--mute)]">확신도</dt><dd class="cf font-bold tabular-nums">—</dd></div>
+        <div><dt class="text-xs text-[var(--mute)]">판단 시간</dt><dd class="ms font-bold tabular-nums">—</dd></div>
         <div><dt class="text-xs text-[var(--mute)]">판정 시각</dt><dd class="tm font-bold tabular-nums">—</dd></div>
+        <div><dt class="text-xs text-[var(--mute)]">자동 출발</dt><dd class="au font-bold">—</dd></div>
         <div class="col-span-2"><dt class="text-xs text-[var(--mute)]">분류 결과</dt><dd class="rs font-bold">—</dd></div>
       </dl>
-      <p class="nt mt-3 text-[11px] text-[var(--mute)]">ESP32 는 같은 결과가 3번 연속, 확신도 0.8 이상일 때만 결과를 보냅니다. 빈 트레이(empty)면 로봇은 출발하지 않습니다.</p>`;
+      <p class="bd mt-3 text-[11px] text-[var(--mute)]"></p>`;
+    const name = c => c == null ? '판정 없음' : c === 'empty' ? '빈 트레이' : L[c] || c;
     return s => {
-      const r = s.lastResult, m = s.mission;
-      $(el, '.cls').textContent = r ? L[r.cls] : '대기';
-      $(el, '.cb').style.transform = `scaleX(${r?.conf ?? 0})`;
-      $(el, '.cf').textContent = r && r.conf == null ? '받기 전' : S.pct(r?.conf);
-      $(el, '.tm').textContent = S.fmtTime(r?.t);
+      const v = s.sort?.last_verdict, m = s.mission, b = s.sort?.board;
+      $(el, '.cls').textContent = v ? (v.error ? '보드 오류' : name(v.class)) : '대기';
+      $(el, '.cb').style.transform = `scaleX(${v?.conf ?? 0})`;
+      $(el, '.th').textContent = `출발 기준 ${s.sort ? Math.round(s.sort.min_confidence * 100) + '%' : '—'}`;
+      $(el, '.cf').textContent = S.pct(v?.conf);
+      $(el, '.ms').textContent = v?.ms != null ? v.ms + ' ms' : '—';
+      $(el, '.tm').textContent = v ? S.fmtTime(new Date(v.time)) : '—';
+      $(el, '.au').textContent = !s.sort ? '—' : s.sort.auto ? '켜짐' : '꺼짐';
+      $(el, '.au').style.color = s.sort && !s.sort.auto ? 'var(--warn)' : '';
       const going = m?.running && m.station in L;
       $(el, '.rs').textContent = !s.connected ? '연결 끊김 — 마지막 값'
-        : going ? `${L[m.station]} 통으로 가는 중` : r ? `${L[r.cls]} 통으로 보냄` : '트레이에 물건을 올리면 판정합니다';
+        : going ? `${L[m.station]} 통으로 가는 중 (${m.by === 'web' ? '웹에서 보냄' : 'AI 판정'})`
+        : v ? (v.result === '출발' ? `${name(v.class)} 통으로 출발했음` : `출발 안 함 — ${v.result}`) : '트레이에 물건을 올리면 판정합니다';
       $(el, '.rs').style.color = going ? 'var(--accent)' : '';
+      $(el, '.bd').textContent = !b ? '' : b.error ? `분류 보드: 연결 문제 (${b.error})` : `분류 보드: ${b.port || '찾는 중'}${b.last_line_at ? ' · 마지막 수신 ' + S.fmtTime(new Date(b.last_line_at)) : ''}`;
     };
   }
 
@@ -145,7 +154,7 @@ const UI = (() => {
       <div class="kp grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
       <div class="mt-4 grid lg:grid-cols-[1fr_1.4fr] gap-3">
         <div class="${card} p-4"><p class="text-xs text-[var(--mute)]">통별 (오늘 완료)</p><ul class="bc mt-3 space-y-3"></ul></div>
-        <div class="${card} p-4"><p class="text-xs text-[var(--mute)]">시간대별 처리량 <span class="opacity-70">(지난 시간은 예시 값)</span></p>
+        <div class="${card} p-4"><p class="text-xs text-[var(--mute)]">시간대별 처리량</p>
           <div class="hr mt-3 h-36 flex items-end gap-1.5"></div><div class="hl mt-1 flex gap-1.5 text-[10px] text-[var(--mute)]"></div></div>
       </div>
       <p class="mt-3 text-xs text-[var(--mute)]"><iconify-icon icon="solar:leaf-linear" class="align-[-2px]"></iconify-icon> 탄소 절감량 <b class="text-[var(--ink)]">— kg</b> · 계수 출처를 확인한 뒤 표시합니다</p>`;
@@ -190,9 +199,9 @@ const UI = (() => {
       URL.revokeObjectURL(a.href);
     };
     const thumb = r => r.img && r.img !== 'demo'
-      ? `<a href="${r.img}" download="도착사진_${r.id}.jpg" title="사진 저장"><img src="${r.img}" alt="${L[r.cls]} 통 도착 사진" class="w-16 aspect-[4/3] object-cover rounded-md"></a>`
+      ? `<a href="${r.img}" download="도착사진_${r.id}.jpg" title="사진 저장"><img src="${r.img}" alt="${L[r.cls] || "출발점"} 도착 사진" class="w-16 aspect-[4/3] object-cover rounded-md"></a>`
       : r.img === 'demo'
-        ? `<svg viewBox="0 0 100 75" class="w-16 rounded-md shrink-0" role="img" aria-label="${L[r.cls]} 통 도착 사진">${S.scene([{ id: S.MARKERS[r.cls], cx: 0, size: 0.32 }])}</svg>`
+        ? `<svg viewBox="0 0 100 75" class="w-16 rounded-md shrink-0" role="img" aria-label="${L[r.cls] || "출발점"} 도착 사진">${S.scene([{ id: S.MARKERS[r.cls], cx: 0, size: 0.32 }])}</svg>`
         : '<span class="w-16 aspect-[4/3] rounded-md bg-[var(--line)] grid place-items-center text-[10px] text-[var(--mute)]">사진 없음</span>';
     const draw = s => {
       const rows = s.log.filter(r => filter === 'all' || r.cls === filter || (filter === 'failed' && r.result !== 'done') || (filter === 'web' && r.by === 'web')).slice(0, 12);
@@ -200,7 +209,7 @@ const UI = (() => {
       if (k === sig) return; sig = k;
       $(el, '.ls').innerHTML = rows.map(r => `<li class="py-2.5 flex items-center gap-3">
         ${thumb(r)}
-        <div class="flex-1 min-w-0"><p class="text-sm font-bold">${L[r.cls]} 통 <span class="font-normal" style="color:${resultCol[r.result]}">· ${S.RESULT[r.result]}</span> <span class="font-normal text-[var(--mute)]">· ${r.by === 'web' ? '웹에서 보냄' : 'AI 판정'}</span></p>
+        <div class="flex-1 min-w-0"><p class="text-sm font-bold">${L[r.cls] || "출발점"} <span class="font-normal" style="color:${resultCol[r.result]}">· ${S.RESULT[r.result]}</span> <span class="font-normal text-[var(--mute)]">· ${r.by === 'web' ? '웹에서 보냄' : 'AI 판정'}</span></p>
           <p class="text-xs text-[var(--mute)] tabular-nums">${S.fmtTime(r.t)} · ${S.secs(r.ms)} · ${r.steps}걸음 · 확신도 ${S.pct(r.conf)}</p>
           ${r.result !== 'done' && r.message ? `<p class="text-xs mt-0.5" style="color:${resultCol[r.result]}">${r.message}</p>` : ''}</div>
         <span class="text-[11px] text-[var(--mute)]">#${r.id}</span></li>`).join('')
@@ -284,6 +293,8 @@ const UI = (() => {
         </div>
         <p class="text-[11px] text-[var(--mute)] mt-1">시안에서는 체크만 하면 되지만, 실제로는 로그인한 관리자만 쓸 수 있게 해야 합니다.</p>
         <div class="mt-3 grid sm:grid-cols-2 gap-3 text-xs">
+          <label class="sm:col-span-2 flex items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2.5 cursor-pointer"><input type="checkbox" class="at accent-[var(--accent)] w-4 h-4 disabled:opacity-40">
+            <span><b class="text-sm">AI 자동 출발</b><br><span class="text-[var(--mute)]">켜면 분류 보드 판정(확신도 기준 이상)이 오자마자 로봇이 출발합니다. 로봇 서버 기본은 꺼짐 (POST /api/sort)</span></span></label>
           <label class="flex flex-col gap-1">통 가득 참 기준(개)<input name="capacity" type="number" min="1" max="50" class="cp rounded-lg border border-[var(--line)] bg-transparent px-2.5 py-2 text-sm disabled:opacity-40"><span class="text-[10px] text-[var(--mute)]">1~50, 팀 결정 전 가정 값</span></label>
           <div class="flex flex-col gap-1">연결한 로봇 서버<code class="rounded-lg border border-[var(--line)] px-2.5 py-2 text-sm break-all">${live ? S.state.base : '가짜 로봇 (브라우저 안)'}</code>
             <span class="text-[10px] text-[var(--mute)]">바꾸려면 주소 뒤에 ?robot=http://로봇IP:8000 · 로봇 서버 CORS_ORIGINS 에 ${location.origin} 등록 필요</span></div>
@@ -295,7 +306,7 @@ const UI = (() => {
         <p class="text-xs text-[var(--mute)]">시뮬레이션 (가짜 로봇일 때만 — 실제 화면에는 없음)</p>
         <div class="mt-3 flex flex-wrap gap-2 text-xs">
           <label class="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-3 py-2 cursor-pointer"><input type="checkbox" class="sd accent-[var(--accent)]"> 로봇 연결 끊기</label>
-          <label class="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-3 py-2 cursor-pointer"><input type="checkbox" class="sa accent-[var(--accent)]" checked> AI 판정 자동으로 들어오기</label>
+          <label class="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-3 py-2 cursor-pointer"><input type="checkbox" class="sa accent-[var(--accent)]" checked> 보드 판정 흉내 (몇 초마다)</label>
           <button data-fail="blocked" class="rounded-full border border-[var(--line)] px-3 py-2">다음 임무: 장애물로 멈춤</button>
           <button data-fail="marker" class="rounded-full border border-[var(--line)] px-3 py-2">다음 임무: 마커 못 찾음</button>
         </div>
@@ -305,12 +316,13 @@ const UI = (() => {
     el.querySelectorAll('[data-send]').forEach(b => hold(b, 1000, async () => say(await S.send(b.dataset.send))));
     $(el, '.cn').onclick = async () => say(await S.stop('cancel'));
     $(el, '.ad').onchange = e => S.setAdmin(e.target.checked);
+    $(el, '.at').onchange = async e => { const r = await S.setAuto(e.target.checked); say(r, '.smsg'); if (!r.ok) e.target.checked = !e.target.checked; };
     $(el, '.cp').value = S.settings.capacity;
     $(el, '.cp').onchange = e => { const r = S.setSetting('capacity', e.target.value); say(r, '.smsg'); if (!r.ok) e.target.value = S.settings.capacity; };
-    $(el, '.bn').onclick = e => { const b = e.target.closest('[data-empty]'); if (b) S.empty(b.dataset.empty); };
+    $(el, '.bn').onclick = async e => { const b = e.target.closest('[data-empty]'); if (b) say(await S.empty(b.dataset.empty), '.smsg'); };
     if (!live) {
       $(el, '.sd').onchange = e => S.sim.down(e.target.checked);
-      $(el, '.sa').onchange = e => S.sim.auto(e.target.checked);
+      $(el, '.sa').onchange = e => S.sim.verdicts(e.target.checked);
       el.querySelectorAll('[data-fail]').forEach(b => b.onclick = () => { S.sim.failNext(b.dataset.fail); toast('다음 임무에서 일어납니다.', true); });
     }
 
@@ -324,6 +336,8 @@ const UI = (() => {
       el.querySelectorAll('[data-send]').forEach(b => b.disabled = S.interlocks(b.dataset.send).some(x => !x.ok));
       $(el, '.cp').disabled = !s.admin;
       $(el, '.ad').checked = s.admin;
+      $(el, '.at').disabled = !s.admin || !s.connected;
+      if (s.sort) $(el, '.at').checked = s.sort.auto;
       const bs = S.CLASSES.map(c => c + s.bins[c]).join() + s.settings.capacity;
       if (bs !== binSig) {
         binSig = bs;

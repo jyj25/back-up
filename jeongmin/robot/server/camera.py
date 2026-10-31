@@ -25,9 +25,11 @@ class Camera:
         try:
             from picamera2 import Picamera2
 
-            if not Picamera2.global_camera_info():
+            # libcamera 는 USB 웹캠(uvcvideo)도 목록에 넣는다 → MJPEG 라 RGB 로 못 받으므로 USB 는 OpenCV 로 넘긴다
+            csi = [i for i, c in enumerate(Picamera2.global_camera_info()) if "usb" not in c.get("Id", "")]
+            if not csi:
                 return
-            cam = Picamera2()
+            cam = Picamera2(csi[0])
             cam.configure(cam.create_video_configuration(main={"size": (640, 480), "format": "RGB888"}))
             cam.start()
             self._picam, self.kind = cam, "picamera"

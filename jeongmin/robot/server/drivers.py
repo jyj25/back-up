@@ -32,6 +32,10 @@ PAN_RANGE = (0, 180)
 TILT_RANGE = (0, 110)  # 라즈봇 V2 의 위아래 서보는 기구 때문에 110° 까지만
 # 라즈봇 키트 리모컨 (실측): 버튼마다 코드를 보내고, 떼면 255 가 남는다.
 # 전원 버튼만 코드 0 이라 레지스터가 "없음" 과 같아 보인다 → 아무 코드 없이 255 가 오면 전원 버튼으로 본다.
+# 쏟기 서보: 고장 난 위아래 서보 자리(S2, 라이브러리의 tilt 채널, 0~110°)에 키트 서보를 꽂아 트레이를 기울인다
+DUMP_REST = int(os.environ.get("DUMP_REST", "0"))     # 평소 (트레이 수평)
+DUMP_ANGLE = int(os.environ.get("DUMP_ANGLE", "90"))  # 쏟을 때
+DUMP_HOLD_S = 1.5
 IR_POWER = 0
 IR_RELEASE = 255
 
@@ -117,7 +121,8 @@ class RealDriver(FakeDriver):
         self._bot = Robot()
         self._lock = threading.Lock()  # I2C 는 한 번에 한 명령씩
         self._bot.motors.stop()
-        self._bot.servos.home()
+        self._bot.servos.pan.set_angle(90)
+        self._bot.servos.tilt.set_angle(DUMP_REST)  # S2 = 쏟기 서보 → 켜질 때 트레이 수평
         self._bot.ultrasonic.enable()
         self._bot.ir.enable()
         self._ir_prev = self._bot.ir.read_keycode()  # 켜기 전에 남아 있던 값은 누름으로 치지 않는다
@@ -177,13 +182,15 @@ class RealDriver(FakeDriver):
         super().set_led(color)
 
     def dump(self) -> None:
-        # TODO 쏟기 장치(트레이 + 서보)가 정해지면 여기서 움직인다.
-        #  지금은 신호만: 노란 LED + 삐삐삐 → 사람이 손으로 쏟아 준다 (시연 흐름은 이어진다)
+        # 노란 LED + 삐 → 쏟기 서보로 트레이를 기울였다가 원위치
         self.set_led("yellow")
-        for _ in range(3):
-            self.beep(120)
-            time.sleep(0.12)
-        time.sleep(1.5)
+        self.beep(120)
+        with self._lock:
+            self._bot.servos.tilt.set_angle(DUMP_ANGLE)
+        time.sleep(DUMP_HOLD_S)
+        with self._lock:
+            self._bot.servos.tilt.set_angle(DUMP_REST)
+        time.sleep(0.5)
         self.set_led(None)
         super().dump()
 

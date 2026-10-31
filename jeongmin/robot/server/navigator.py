@@ -11,6 +11,10 @@
   가운데에서 벗어남          → align    : 그쪽으로 조금 회전 (많이 벗어날수록 길게)
   가운데 + 아직 멂           → approach : 앞으로 조금
   마커가 충분히 큼 / 초음파 가까움 → arrived
+
+쏟기 (dump_side 가 있으면): 트레이가 옆으로 쏟으므로 쏟는 쪽 옆면을 통에 댄다
+  카메라를 그쪽 옆(90°)으로 → 그 화면에서 마커가 가운데 올 때까지 제자리 회전 → 커질 때까지 옆걸음
+  → 쏟기 → 반대로 옆걸음해서 빠지기 → 카메라 정면
 """
 from __future__ import annotations
 
@@ -31,6 +35,9 @@ class NavConfig:
     arrive_cm: float = 25     # 가운데를 보고 있고 초음파가 이보다 가까우면 도착
     search_steps: int = 40    # 이만큼 돌아도 못 찾으면 실패 (250ms × 40 ≈ 한 바퀴 반)
     lost_near: float = 0.6    # 마커가 arrive_size 의 이만큼 이상 컸다가 사라지면 도착 (가까워져 화면 아래로 빠짐)
+    dump_side: str | None = None  # 트레이가 쏟는 쪽 "left" / "right" (None 이면 정면으로 멈춘 채 쏟음)
+    dock_size: float = 0.35   # 옆걸음으로 다가갈 때 마커가 이만큼 크면 멈춤
+    dock_steps: int = 12      # 옆면 맞추기·옆걸음 최대 걸음
     look_angles: list[int] = field(default_factory=lambda: [50, 130, 20, 160])  # 둘러볼 카메라 각도 (90 정면, 클수록 왼쪽)
     look_every: int = 12      # 회전하며 찾는 중 이만큼마다 다시 둘러본다
     look_settle_ms: int = 400 # 카메라를 돌린 뒤 화면이 안정될 때까지
@@ -119,12 +126,17 @@ class Mission:
             await asyncio.to_thread(self.robot.driver.set_servo, 90, None)  # 카메라 정면
             await self._go(station)
             if dump:
+                side = self.cfg.dump_side
+                strafed = await self._dock_side(self.stations[station]) if side else 0
                 self._set("dumping", f"{self.stations[station]['label']} 에 쏟는 중")
                 await asyncio.to_thread(self.robot.driver.dump)
                 self._set("backing")
-                self.robot.move("backward", self.cfg.speed, self.cfg.backup_ms)
-                await self.sleep(self.cfg.backup_ms / 1000)
-                await self._stop()
+                if side:  # 옆걸음한 만큼 반대로 빠진다
+                    away = "strafe_left" if side == "right" else "strafe_right"
+                    await self._pulse(away, self.cfg.speed, max(1, strafed) * self.cfg.pulse_ms)
+                    await asyncio.to_thread(self.robot.driver.set_servo, 90, None)
+                else:
+                    await self._pulse("backward", self.cfg.speed, self.cfg.backup_ms)
             if return_home and station != "home":
                 await self._go("home")
             self._set("done", "완료")
@@ -134,6 +146,46 @@ class Mission:
         except asyncio.CancelledError:
             await self._stop()
             raise
+
+    async def _pulse(self, action: str, speed: int, ms: int) -> None:
+        self.robot.move(action, speed, ms + 300)  # 서버 자동 정지는 여유 있게, 실제 정지는 여기서
+        await self.sleep(ms / 1000)
+        await self._stop()
+        await self.sleep(self.cfg.settle_ms / 1000)
+
+    async def _dock_side(self, info: dict) -> int:
+        """쏟는 쪽 옆면을 통에 댄다. 옆걸음한 걸음 수를 돌려준다 (빠질 때 씀)."""
+        cfg, target = self.cfg, info["marker"]
+        side = cfg.dump_side
+        self._set("docking", f"{info['label']} 쪽으로 옆면 맞추는 중")
+        await asyncio.to_thread(self.robot.driver.set_servo, 0 if side == "right" else 180, None)  # 각도가 크면 왼쪽
+        await self.sleep(cfg.look_settle_ms / 1000)
+        # 1) 옆 카메라 화면에서 마커가 가운데 올 때까지 회전. 몸과 카메라가 같이 돌므로 판단은 정면과 같다
+        first = "turn_left" if side == "right" else "turn_right"  # 오른쪽 면을 대려면 왼쪽으로 돈다
+        for _ in range(cfg.dock_steps * 3):
+            self.seen = await asyncio.to_thread(self.robot.vision.markers)
+            m = next((m for m in self.seen if m.id == target), None)
+            if m is not None and abs(m.cx) <= cfg.center_tol:
+                break
+            if m is None:
+                action, ms = first, cfg.pulse_ms
+            else:
+                action = "turn_right" if m.cx > 0 else "turn_left"
+                ms = max(60, int(cfg.pulse_ms * min(1.0, abs(m.cx))))
+            await self._pulse(action, cfg.turn_speed, ms)
+        else:
+            raise NavError(f"{info['label']} 쪽으로 옆면을 못 맞췄습니다")
+        # 2) 마커가 커질 때까지 통 쪽으로 옆걸음 (가까이서 사라져도 멈춤)
+        toward = "strafe_right" if side == "right" else "strafe_left"
+        steps = 0
+        while steps < cfg.dock_steps:
+            m = next((m for m in self.seen if m.id == target), None)
+            if m is None or m.size >= cfg.dock_size:
+                break
+            await self._pulse(toward, cfg.speed, cfg.pulse_ms)
+            steps += 1
+            self.seen = await asyncio.to_thread(self.robot.vision.markers)
+        return steps
 
     async def _look_around(self, info: dict) -> float | None:
         """몸은 두고 카메라만 돌려 목표 마커를 찾는다 → 오른쪽이면 +1, 왼쪽이면 -1, 없으면 None"""

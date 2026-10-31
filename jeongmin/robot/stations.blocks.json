@@ -33,6 +33,8 @@
     "search_steps": 40,
     "step_limit": 300,
     "backup_ms": 600,
-    "lost_near": 0.5
+    "lost_near": 0.5,
+    "dump_side": "right",
+    "dock_size": 0.12
   }
 }

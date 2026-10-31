@@ -35,6 +35,7 @@
     "backup_ms": 600,
     "lost_near": 0.5,
     "dump_side": "right",
-    "dock_size": 0.12
+    "dock_size": 0.12,
+    "turn90_ms": 500
   }
 }

@@ -198,40 +198,60 @@ def test_marker_lost_when_close_counts_as_arrived():
 
 
 def test_dock_right_side_before_dump():
-    # 오른쪽으로 쏟는 트레이: 카메라 오른쪽(0°) → 왼쪽으로 돌아 마커를 가운데 → 오른쪽 옆걸음으로 다가감 → 쏟기 → 왼쪽으로 빠짐
+    # 오른쪽으로 쏟는 트레이: 카메라 오른쪽(0°) → 왼쪽으로 약 90° → 옆 화면에서 마커가 오른쪽에 있으면 보정 → 오른쪽 옆걸음
     robot = main.Robot()
     clock = VirtualClock()
     robot.mission.sleep = clock.sleep
     robot.mission.cfg.dump_side = "right"
     target = main.STATIONS["can"]["marker"]
-    st = {"turns": 0, "strafes": 0}
+    st = {"right": 0, "strafes": 0}
     log = []
 
     def markers():
         if robot.driver.state.pan != 0:
             return []
-        if st["turns"] < 2:  # 처음엔 옆 화면에 안 보이다가 두 번 돌면 정면
-            return []
-        return [Marker(target, 0.0, 0.2 + 0.1 * st["strafes"])]
+        cx = 0.5 if st["right"] == 0 else 0.0   # 90° 돌고 나면 조금 오른쪽 → 한 번 보정
+        return [Marker(target, cx, 0.2 + 0.1 * st["strafes"])]
 
     def move(action, speed, ms):
         log.append(action)
-        if action == "turn_left":
-            st["turns"] += 1
-        if action == "strafe_right":
-            st["strafes"] += 1
+        st["right"] += action == "turn_right"
+        st["strafes"] += action == "strafe_right"
 
     robot.vision.markers = markers
     robot.move = move
-    robot.driver.dump = lambda: log.append("dump")
 
     async def run():
-        strafed = await robot.mission._dock_side(robot.mission.stations["can"])
-        assert strafed == 2  # 0.2 → 0.3 → 0.4 (≥ 0.35)
+        assert await robot.mission._dock_side(robot.mission.stations["can"]) == 2  # 0.2 → 0.3 → 0.4 (≥ 0.35)
 
     try:
         asyncio.run(run())
     finally:
         robot.close()
-    assert log == ["turn_left", "turn_left", "strafe_right", "strafe_right"]
+    assert log == ["turn_left", "turn_right", "strafe_right", "strafe_right"]
     assert robot.driver.state.pan == 0
+
+
+def test_dock_without_marker_still_dumps():
+    # 옆 화면에 마커가 안 보여도 실패하지 않고: 약 90° 돌고 → 쏟고 → 되돌아 회전 → 출발점
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    robot.mission.cfg.dump_side = "right"
+    target = main.STATIONS["can"]["marker"]
+    robot.vision.markers = lambda: [Marker(target, 0.0, 0.4)] if robot.driver.state.pan == 90 else []
+    log = []
+    robot.move = lambda action, speed, ms: log.append(action)
+    robot.driver.dump = lambda: log.append("dump")
+
+    async def run():
+        robot.mission.start("can", dump=True, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "done", robot.mission.state
+    assert log == ["turn_left", "dump", "turn_right"]  # 옆걸음을 안 했으니 빠질 것도 없음
+    assert robot.driver.state.pan == 90

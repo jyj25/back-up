@@ -30,6 +30,10 @@ MOVES = {
 LED_COLORS = ["red", "green", "blue", "yellow", "purple", "cyan", "white"]
 PAN_RANGE = (0, 180)
 TILT_RANGE = (0, 110)  # 라즈봇 V2 의 위아래 서보는 기구 때문에 110° 까지만
+# 라즈봇 키트 리모컨 (실측): 버튼마다 코드를 보내고, 떼면 255 가 남는다.
+# 전원 버튼만 코드 0 이라 레지스터가 "없음" 과 같아 보인다 → 아무 코드 없이 255 가 오면 전원 버튼으로 본다.
+IR_POWER = 0
+IR_RELEASE = 255
 
 
 @dataclass
@@ -51,6 +55,7 @@ class FakeDriver:
     def __init__(self) -> None:
         self.state = RobotState(mode=self.mode)
         self.world = World()  # 가짜 위치·마커·거리 (sim.py)
+        self.ir_queue: list[int] = []  # 테스트에서 리모컨 누름을 넣는 곳
 
     def _log(self, text: str) -> None:
         self.state.history.append(text)
@@ -90,6 +95,10 @@ class FakeDriver:
         """실은 물건 쏟기"""
         self._log("dump")
 
+    def remote_key(self) -> int | None:
+        """리모컨 버튼이 새로 눌렸으면 그 코드, 아니면 None"""
+        return self.ir_queue.pop(0) if self.ir_queue else None
+
     def close(self) -> None:
         self.stop()
 
@@ -110,6 +119,8 @@ class RealDriver(FakeDriver):
         self._bot.motors.stop()
         self._bot.servos.home()
         self._bot.ultrasonic.enable()
+        self._bot.ir.enable()
+        self._ir_prev = self._bot.ir.read_keycode()  # 켜기 전에 남아 있던 값은 누름으로 치지 않는다
 
     def move(self, action: str, speed: int) -> None:
         with self._lock:
@@ -137,6 +148,16 @@ class RealDriver(FakeDriver):
         with self._lock:
             s = self._bot.line_tracker.read()
         return [bool(s.x1), bool(s.x2), bool(s.x3), bool(s.x4)]
+
+    def remote_key(self) -> int | None:
+        with self._lock:
+            code = self._bot.ir.read_keycode()
+        prev, self._ir_prev = self._ir_prev, code
+        if code == prev or code is None:
+            return None
+        if code == IR_RELEASE:
+            return IR_POWER if prev is None else None  # 버튼 코드 없이 바로 255 → 전원 버튼
+        return code
 
     def beep(self, ms: int) -> None:
         # raspbot 의 beep() 는 update() 를 계속 불러야 꺼지므로 직접 켜고 끈다
@@ -171,6 +192,7 @@ class RealDriver(FakeDriver):
             self.stop()
             with self._lock:
                 self._bot.ultrasonic.disable()
+                self._bot.ir.disable()
                 self._bot.leds.off_all()
         finally:
             self._bot.close()

@@ -79,3 +79,30 @@ def test_obstacle_stops_while_moving():
         time.sleep(0.4)
         s = c.get("/api/status").json()
         assert s["moving"] is None and s["blocked"] is True
+
+
+def test_remote_power_button_stops():
+    with client() as c:
+        assert c.post("/api/move", json={"action": "forward", "speed": 100, "duration_ms": 3000}).json()["moving"]
+        main.robot.driver.ir_queue.append(5)       # 다른 버튼은 무시
+        time.sleep(0.2)
+        assert c.get("/api/status").json()["moving"] == "forward"
+        main.robot.driver.ir_queue.append(main.IR_STOP_KEY)  # 전원 버튼
+        time.sleep(0.2)
+        assert c.get("/api/status").json()["moving"] is None
+
+
+def test_real_driver_remote_decoding():
+    # 실측 순서: 일반 버튼은 코드 → 255, 전원 버튼은 (0 = 없음) → 255
+    import threading
+    from types import SimpleNamespace
+
+    from server.drivers import IR_POWER, RealDriver
+
+    reads = iter([5, 5, 255, 255, None, 255, 255, 18, 255])
+    d = object.__new__(RealDriver)
+    d._lock = threading.Lock()
+    d._bot = SimpleNamespace(ir=SimpleNamespace(read_keycode=lambda: next(reads)))
+    d._ir_prev = 255
+    got = [d.remote_key() for _ in range(9)]
+    assert [k for k in got if k is not None] == [5, IR_POWER, 18]

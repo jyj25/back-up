@@ -8,6 +8,7 @@
 - 모든 이동 명령은 duration_ms 뒤에 자동으로 멈춘다 (기본 500ms, 최대 3000ms).
   계속 움직이려면 화면처럼 0.2초마다 같은 명령을 다시 보낸다 → 연결이 끊기면 로봇이 알아서 선다.
 - 속도는 MAX_SPEED (기본 150 / 255) 를 넘지 않는다.
+- 리모컨 비상 정지: IR_STOP_KEY 버튼(기본 0 = 전원 버튼)을 누르면 바퀴 정지 + 임무 취소. none 이면 끔.
 - 앞쪽으로 가는 중에 초음파 거리가 OBSTACLE_CM (기본 15cm) 보다 가까우면 멈추고,
   그 상태에서는 앞쪽 이동 명령을 받지 않는다 (뒤·옆·회전은 된다). 0 이면 끔.
 
@@ -43,13 +44,15 @@ from pydantic import BaseModel, Field
 
 from .board import BoardReader
 from .camera import Camera
-from .drivers import LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
+from .drivers import IR_POWER, LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
 from .sorter import Sorter, parse_line
 from .vision import MARKER_DICT, CameraVision, NoVision, SimVision
 
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
 OBSTACLE_CM = float(os.environ.get("OBSTACLE_CM", "15"))
+_ir_stop = os.environ.get("IR_STOP_KEY", str(IR_POWER)).lower()
+IR_STOP_KEY = None if _ir_stop == "none" else int(_ir_stop)
 FORWARD_MOVES = {"forward", "diag_forward_left", "diag_forward_right"}  # 초음파 센서는 앞에 있다
 # 끝의 / 는 브라우저가 보내는 Origin 에 없으므로 떼어 둔다
 CORS_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
@@ -106,6 +109,11 @@ class Robot:
         while True:
             await asyncio.sleep(0.05)
             tick += 1
+            if IR_STOP_KEY is not None and await asyncio.to_thread(self.driver.remote_key) == IR_STOP_KEY:
+                print("[robot] 리모컨 비상 정지")
+                await self.mission.abort("리모컨 정지")
+                await asyncio.to_thread(self.driver.stop)
+                continue
             moving = self.driver.state.moving
             if moving and time.monotonic() >= self._stop_at:
                 await asyncio.to_thread(self.driver.stop)

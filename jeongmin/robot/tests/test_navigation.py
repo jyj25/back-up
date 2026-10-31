@@ -53,6 +53,24 @@ def test_detect_printed_markers():
     assert found[1].cx < -0.5
 
 
+def test_detect_kit_block_apriltags():
+    # 라즈봇 키트 블록 윗면은 AprilTag 36h11 (stations.blocks.json)
+    cv2 = pytest.importorskip("cv2")
+    import json
+    import numpy as np
+
+    from server.vision import detect, make_detector
+
+    conf = json.loads((main.STATIONS_FILE.parent / "stations.blocks.json").read_text(encoding="utf-8"))
+    assert {s["marker"] for s in conf["stations"].values()} == {1, 2, 3, 4}
+    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, conf["marker_dict"]))
+    frame = np.full((480, 640), 255, np.uint8)
+    frame[100:220, 100:220] = cv2.aruco.generateImageMarker(d, 2, 120)
+    frame[100:220, 400:520] = cv2.aruco.generateImageMarker(d, 4, 120)
+    assert sorted(m.id for m in detect(frame, make_detector(conf["marker_dict"]))) == [2, 4]
+    assert detect(frame) == []  # 기본(4x4) 마커로는 안 보인다
+
+
 # ---- 가짜 세계에서 임무 전체 (가상 시계라 바로 끝남) ----
 
 class VirtualClock:

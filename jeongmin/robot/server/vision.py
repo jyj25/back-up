@@ -1,5 +1,8 @@
 """카메라 화면에서 ArUco 마커(통마다 붙인 번호표)를 찾는다.
 
+마커 종류는 stations.json 의 "marker_dict" 로 고른다 (없으면 DICT_4X4_50).
+  인쇄한 마커: DICT_4X4_50 / 라즈봇 키트 블록: DICT_APRILTAG_36h11 (stations.blocks.json)
+
 - CameraVision: 실제 카메라 화면을 OpenCV 로 분석 (라즈베리파이)
 - SimVision:   가짜 모드에서 sim.World 가 계산한 마커를 돌려준다 (노트북)
 
@@ -11,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-MARKER_DICT = "DICT_4X4_50"  # 4x4 칸, 0~49번. 인쇄용 scripts/make_markers.py 와 같아야 한다
+MARKER_DICT = "DICT_4X4_50"  # 기본값: 4x4 칸, 0~49번
 
 
 @dataclass
@@ -24,10 +27,10 @@ class Marker:
         return asdict(self)
 
 
-def make_detector():
+def make_detector(dict_name: str = MARKER_DICT):
     import cv2
 
-    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, MARKER_DICT))
+    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
     return cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
 
 
@@ -51,8 +54,9 @@ def detect(frame, detector=None) -> list[Marker]:
 
 
 class CameraVision:
-    def __init__(self, camera) -> None:
+    def __init__(self, camera, dict_name: str = MARKER_DICT) -> None:
         self.camera = camera
+        self.dict_name = dict_name
         self._detector = None
 
     def markers(self) -> list[Marker]:
@@ -60,7 +64,7 @@ class CameraVision:
         if frame is None:
             return []
         if self._detector is None:
-            self._detector = make_detector()
+            self._detector = make_detector(self.dict_name)
         return detect(frame, self._detector)
 
 

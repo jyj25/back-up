@@ -12,6 +12,7 @@
   그 상태에서는 앞쪽 이동 명령을 받지 않는다 (뒤·옆·회전은 된다). 0 이면 끔.
 
 통 찾아가기 (stations.json 의 정류장마다 ArUco 마커):
+  키트 블록(AprilTag 1~4번)으로 하려면 STATIONS_FILE=stations.blocks.json
   POST /api/mission {"station": "can"} → 마커 찾아 다가가기 → 쏟기 → 출발점(home) 복귀
   수동 이동·정지 명령이 오면 임무는 바로 취소된다.
 
@@ -45,7 +46,7 @@ from .camera import Camera
 from .drivers import LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
 from .sorter import Sorter, parse_line
-from .vision import CameraVision, NoVision, SimVision
+from .vision import MARKER_DICT, CameraVision, NoVision, SimVision
 
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
 OBSTACLE_CM = float(os.environ.get("OBSTACLE_CM", "15"))
@@ -56,6 +57,7 @@ STATIC = Path(__file__).parent / "static"
 STATIONS_FILE = Path(os.environ.get("STATIONS_FILE", Path(__file__).parent.parent / "stations.json"))
 _CONF = json.loads(STATIONS_FILE.read_text(encoding="utf-8"))
 STATIONS: dict = _CONF["stations"]
+STATIONS_MARKER_DICT = _CONF.get("marker_dict", MARKER_DICT)
 NAV = NavConfig.from_dict(_CONF.get("nav", {}))
 MIN_CONFIDENCE = float(_CONF.get("sort", {}).get("min_confidence", 0.8))
 DEFAULT_HISTORY = Path(__file__).parent.parent / "data" / "history.jsonl"
@@ -74,7 +76,7 @@ class Robot:
         if self.driver.mode == "fake":
             self.vision = SimVision(self.driver.world)  # 가짜 세계의 마커
         elif self.camera.kind != "none":
-            self.vision = CameraVision(self.camera)
+            self.vision = CameraVision(self.camera, STATIONS_MARKER_DICT)
         else:
             self.vision = NoVision()
         self.mission = Mission(self, STATIONS, NAV)

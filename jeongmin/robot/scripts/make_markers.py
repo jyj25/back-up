@@ -23,8 +23,9 @@ SIDE_CM = 10
 
 
 def main() -> None:
-    stations = json.loads((ROBOT / "stations.json").read_text(encoding="utf-8"))["stations"]
-    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, MARKER_DICT))
+    conf = json.loads((ROBOT / "stations.json").read_text(encoding="utf-8"))
+    stations = conf["stations"]
+    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, conf.get("marker_dict", MARKER_DICT)))
     OUT.mkdir(exist_ok=True)
     cards = []
     for name, info in stations.items():

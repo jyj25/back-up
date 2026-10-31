@@ -1,5 +1,6 @@
 {
   "_설명": "통(정류장)마다 ArUco 마커 번호를 정한다. 통 이름 = AI 분류 이름(can/pet/paper, 빈 트레이 empty 는 통 없음). 마커는 scripts/make_markers.py 로 인쇄. nav 값은 조립 후 실제로 돌려 보고 고친다.",
+  "marker_dict": "DICT_4X4_50",
   "stations": {
     "home":    {"marker": 0, "label": "출발점 (물건 싣는 곳)"},
     "can":   {"marker": 1, "label": "캔"},

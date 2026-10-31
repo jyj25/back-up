@@ -13,20 +13,23 @@ jeongmin/
 └── robot/
     ├── requirements.txt
     ├── client.py           다른 역할이 파이썬으로 로봇을 부르는 클라이언트 (설치 불필요)
-    ├── stations.json       통(정류장) 이름 ↔ 마커 번호, 찾아가기 설정값
+    ├── stations.json       통(정류장) 이름 ↔ 마커 번호, 찾아가기 설정값 (인쇄 마커 ArUco 4x4)
+    ├── stations.blocks.json 키트 블록(AprilTag 1~4번)으로 시험할 때 (STATIONS_FILE 로 고름)
     ├── markers/            인쇄용 마커 (markers.html 을 열어 인쇄)
     ├── find_robot.py       같은 Wi-Fi 에서 로봇 IP 찾기 (노트북에서)
     ├── server/             FastAPI 조종 서버 + 조종 화면(static/)
     │   ├── main.py         API, 자동 정지 타이머
     │   ├── drivers.py      RealDriver(raspbot 라이브러리) / FakeDriver(하드웨어 없이)
-    │   ├── camera.py       카메라 모듈 3(picamera2) → USB 카메라(라즈봇 기본, OpenCV) → 없음
-    │   ├── vision.py       ArUco 마커 찾기
-    │   ├── navigator.py    통 찾아가기 → 쏟기 → 출발점 복귀
+    │   ├── camera.py       카메라 모듈 3(picamera2) → USB 카메라(라즈봇 기본, OpenCV, 최신 화면만) → 없음
+    │   ├── vision.py       마커 찾기 (ArUco / AprilTag, 종류는 stations 파일에서)
+    │   ├── navigator.py    통 찾아가기(카메라로 둘러보기) → 쏟기 → 출발점 복귀
     │   ├── sorter.py       AI 판정 → 통 임무 시작, 처리 기록
     │   ├── board.py        분류 보드(ESP32) USB 시리얼 읽기
     │   └── sim.py          가짜 모드용 2D 세계 (노트북에서 찾아가기 시험)
     ├── scripts/
     │   ├── hw_test.py      하드웨어 단계별 점검 (라즈베리파이에서)
+    │   ├── try_mission.sh  실제 로봇으로 통 찾아가기 한 번 시험 (서버 다시 켜고 진행 표시)
+    │   ├── try_dump.py     쏟기만 시험 (옆면 대기 → 쏟기 → 되돌아 회전)
     │   ├── wifi.sh         핫스팟 등 Wi-Fi 미리 등록·확인 (라즈베리파이에서)
     │   ├── autostart.sh    전원 켜면 조종 서버 자동 실행 (라즈베리파이에서)
     │   └── make_markers.py 인쇄용 마커 만들기 (노트북에서)
@@ -62,13 +65,17 @@ cd ~/ai2-8/jeongmin/robot
 | `BOARD_PORT` | 실제 `auto` / 가짜 `none` | 분류 보드 포트. `auto` = `/dev/ttyACM*` 첫 번째 |
 | `HISTORY_FILE` | 실제 `data/history.jsonl` / 가짜 `none` | 처리 기록 파일 (서버를 다시 켜도 이어짐) |
 | `CORS_ORIGINS` | (없음) | 브라우저로 API 를 부를 **팀원 웹 주소**, 쉼표로 여러 개. 예) `http://localhost:5173,http://127.0.0.1:5500` |
+| `CAMERA` | `auto` | `picamera` / `usb` / `none`. `auto` 는 카메라 모듈 3 이 꽂혀 있으면 그걸 쓴다 → 모듈 3 을 꽂았는데 길 찾기는 USB 로 하려면 `usb` |
+| `CAMERA_INDEX` | `0` | USB 웹캠 번호 |
+| `STATIONS_FILE` | `stations.json` | 키트 블록으로 시험할 때 `stations.blocks.json` |
+| `IR_STOP_KEY` | `0` (전원 버튼) | **리모컨 비상 정지** 버튼 코드. `none` 이면 끔 |
+| `DUMP_REST` / `DUMP_ANGLE` | `0` / `90` | 쏟기 서보(S2) 평소 / 쏟을 때 각도 |
+| `DUMP_SWEEP_MS` | `300` | 쏟기 서보가 90° 도는 시간 (클수록 천천히) |
 
 자동 실행(`autostart.sh`)일 때는 `robot/robot.env.example` 을 `robot/robot.env` 로 복사해서 고치고 `sudo systemctl restart raspbot`.
 
 **팀원 웹에서 부를 때 (CORS)**: 브라우저는 다른 주소의 페이지가 로봇 API 를 부르는 것을 막는다. 팀원 웹 주소를 `CORS_ORIGINS` 에 넣어야 한다 (파이썬·앱에서 부를 때는 필요 없음).
 `https` 로 배포된 사이트(Vercel 등)에서 `http://<로봇 IP>` 는 CORS 와 별개로 브라우저가 막는다 → 팀원 웹은 노트북에서 `http://localhost…` 로 띄우거나 로봇 서버에 넣어서 쓴다.
-| `CAMERA` | `auto` | `picamera` / `usb` / `none` |
-| `CAMERA_INDEX` | `0` | USB 웹캠 번호 |
 
 ## 조작 전 준비: 학교·발표장 Wi-Fi (집에서 미리 한 번)
 
@@ -96,12 +103,16 @@ bash scripts/autostart.sh install   # 전원만 켜면 조종 서버가 뜨게 (
 물건 싣기 → (C270 + AI) 종류 판단 → POST /api/mission {"station": "can"}
          → 캔 통 마커 찾기 → 다가가기 → 쏟기 → 뒤로 빠지기 → 출발점(home) 마커로 복귀
 ```
-- 통마다 **ArUco 마커**(번호표)를 붙인다: `markers/markers.html` 인쇄, 한 변 10cm, 통 앞면 로봇 카메라 높이(약 15cm).
+- 통마다 **ArUco 마커**(번호표)를 붙인다: `markers/markers.html` 인쇄, 한 변 10cm, 통 앞면 로봇 카메라 높이(약 15cm). **세워서** 붙인다 — 카메라가 정면 고정이라 바닥에 눕힌 마커는 못 읽는다.
 - 이름·마커 번호·속도 등 설정은 `stations.json`. 통을 늘리면 여기에 추가하고 `python scripts/make_markers.py`.
-- 움직임: **조금 움직이고 → 멈춰서 보고 → 다시 판단** (`navigator.decide`). 마커가 안 보이면 제자리 회전으로 찾고, 한 바퀴 반 돌아도 없으면 `failed`.
-- 도착 판단: 마커가 화면 너비의 30% 이상, 또는 마커를 정면으로 보고 초음파 25cm 이하.
+- **키트 블록으로 시험**: 라즈봇 키트의 블록 윗면은 AprilTag 36h11 (1번 출발점, 2번 캔, 3번 페트, 4번 종이). 마커 면을 로봇 쪽으로 세우고 `STATIONS_FILE=stations.blocks.json`.
+- 움직임: **조금 움직이고 → 멈춰서 보고 → 다시 판단** (`navigator.decide`). 마커가 안 보이면 **몸은 두고 카메라만 좌우로 돌려 둘러보고**(`look`), 찾으면 그쪽으로 회전한다. 그래도 없으면 제자리 회전 (12걸음마다 다시 둘러봄), 한 바퀴 반 돌아도 없으면 `failed`.
+- 도착 판단: 마커가 화면 너비의 30% 이상, 마커를 정면으로 보고 초음파 25cm 이하, 또는 **크게 보이던 마커가 가까이서 사라짐**(낮은 마커가 화면 아래로 빠짐). 블록 설정은 초음파 판단을 끈다 (블록이 작아 뒤쪽 물체를 잼).
 - **수동 조종·정지 버튼을 누르면 임무는 바로 취소**된다.
-- **쏟기 장치는 아직 미정**: 실제 로봇의 `RealDriver.dump()` 는 지금 노란 LED + 삐삐삐 신호만 낸다 (사람이 손으로 쏟는 시연 가능). 트레이 + 서보가 정해지면 이 함수만 바꾸면 된다.
+- **리모컨 비상 정지**: 라즈봇 키트 리모컨의 **전원 버튼** → 바퀴 정지 + 임무 취소. Wi-Fi 가 끊겨도 된다. (실측: 버튼마다 코드를 보내고 떼면 255. 전원 버튼만 코드 0 이라 "코드 없이 255" 로 알아본다.)
+- **쏟기**: 고장 난 위아래 서보 자리(**S2**)에 아두이노 키트 서보(SG90)를 꽂고, 서보 팔에 트레이(두부 통 크기 PP)를 붙였다. 도착하면 노란 LED + 짧은 삐 → **반시계 90° 로 천천히 기울이기** → 1.5초 → 수평. 트레이는 OLED 반대쪽(**로봇 오른쪽**)으로 쏟는다. 가벼운 것만 (SG90 약 1.6kg·cm).
+- **쏟기 전 옆면 대기** (`nav.dump_side: "right"`): 통을 정면으로 보고 도착하면 → 카메라를 오른쪽(0°)으로 → **왼쪽으로 약 90°** (`turn90_ms` 시간 회전) → 옆 화면에 마커가 보이면 가운데로 보정하고 `dock_size` 만큼 커질 때까지 오른쪽 옆걸음 → 쏟기 → 옆걸음한 만큼 왼쪽으로 빠지기 → **오른쪽으로 약 90°** 되돌아 → 카메라 정면. 옆 화면에 마커가 안 보여도 실패하지 않고 그 자리에서 쏟는다. `dump_side` 를 빼면 정면으로 멈춘 채 쏟는다.
+- **회전 실측**: `turn_speed` 60 으로 1초에 약 180° → `turn90_ms` 500 으로 약 90° (실물 확인). 바닥 재질이 바뀌면 다시 잰다.
 - **AI 판정 받기**: 분류 보드가 USB 로 `{"class":"can","conf":0.93,"ms":173}` 한 줄을 보내면 (`{` 로 시작하지 않는 줄은 무시) — 자동 출발이 켜져 있고, 임무 중이 아니고, `class` 가 통 이름이고, 확신도가 `stations.json` 의 `sort.min_confidence`(0.8) 이상이면 출발. `class: null`·`empty`·`error`·`event` 가 `decision` 이 아닌 줄은 출발하지 않는다. 라즈베리파이에서 권한 오류가 나면 사용자를 `dialout` 그룹에 (sudo, 사람이).
 - 노트북 가짜 모드에서도 `sim.py` 의 가짜 세계(출발점 뒤, 통 3개 앞)로 처음부터 끝까지 돌아간다. 조종 화면의 "통 찾아가기" 버튼으로 확인.
 
@@ -112,7 +123,7 @@ bash scripts/autostart.sh install   # 전원만 켜면 조종 서버가 뜨게 (
 | POST | `/api/move` | `{"action": "forward", "speed": 100, "duration_ms": 500}` → **duration 뒤 자동 정지** |
 | POST | `/api/stop` | 즉시 정지 |
 | GET | `/api/status` | `mode, moving, speed, pan, tilt, led, camera, max_speed, blocked, obstacle_cm` (`blocked` = 장애물 때문에 멈춤) |
-| POST | `/api/servo` | `{"pan": 0~180, "tilt": 0~110}` (90 = 정면, 둘 중 하나만 보내도 됨) |
+| POST | `/api/servo` | `{"pan": 0~180, "tilt": 0~110}` — `pan` 은 카메라 좌우 (90 정면, 클수록 왼쪽), `tilt` 는 이제 **쏟기 서보**(0 수평, 90 쏟기) |
 | GET | `/api/distance` | `{"cm": 42.3}` 초음파 |
 | GET | `/api/line` | `{"sensors": [false, true, true, false]}` 바닥 라인 센서 (왼→오) |
 | POST | `/api/beep` | `{"ms": 150}` |
@@ -121,7 +132,7 @@ bash scripts/autostart.sh install   # 전원만 켜면 조종 서버가 뜨게 (
 | GET | `/api/stream` | MJPEG 실시간 영상 (`<img src>` 로 바로 표시) |
 | GET | `/api/stations` | 정류장 목록 `{"can": {"marker": 1, "label": "캔"}, ...}` — 통 이름 = AI 분류 이름 |
 | POST | `/api/mission` | `{"station": "can", "dump": true, "return_home": true}` → 202, 백그라운드로 시작 (이미 하는 중이면 409) |
-| GET | `/api/mission` | `phase` (search·align·approach·arrived·dumping·backing·done·failed·cancelled), `message`, `running`, `seen` |
+| GET | `/api/mission` | `phase` (look·search·align·approach·arrived·docking·dumping·backing·done·failed·cancelled), `message`, `running`, `seen` |
 | POST | `/api/mission/cancel` | 임무 취소 + 정지 |
 | POST | `/api/verdict` | 보드와 같은 판정 JSON `{"class":"can","conf":0.93}` → `{accepted, reason}` (시험용·다른 분류기) |
 | GET / POST | `/api/sort` | 자동 출발 상태·보드 연결·최근 판정 / `{"auto": true}` 로 켜기 |
@@ -146,19 +157,23 @@ if bot.distance() < 20: bot.beep()
 ```
 웹(자바스크립트)에서는 `fetch("/api/move", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({...})})` — `server/static/app.js` 가 예시.
 
-## 상태 (2026-10-28)
+## 상태 (2026-11-01)
 
 - [x] 라즈베리파이 OS 설치, Wi-Fi·SSH(키 로그인), I2C 켜기, `raspbot` 라이브러리 설치
 - [x] 조종 서버 · 조종 화면 · 가짜 모드 · 테스트 (8개 통과)
 - [x] 장애물 자동 정지(초음파), 팀원용 파이썬 클라이언트
 - [x] 통 찾아가기(ArUco 마커) + 쏟기 자리 + 출발점 복귀, 가짜 세계 시뮬레이션, 인쇄용 마커
 - [x] AI 판정 USB 수신 → 자동 출발(기본 꺼짐), 처리 기록 API (테스트 21개 통과)
-- [ ] 라즈봇 조립 (라즈베리파이 장착 직전에서 멈춤)
-- [ ] `hw_test.py` 로 실제 하드웨어 점검 → `docs/robot-specs.md` 측정값 채우기 (`OBSTACLE_CM` 도 실제 제동 거리 보고 조정)
+- [x] 라즈봇 조립, 하드웨어 점검 → `docs/robot-specs.md` (위아래 서보 고장 → 그 자리를 쏟기 서보로)
+- [x] 키트 블록(AprilTag) 마커 지원, 실제 카메라로 블록 1~4번 인식
+- [x] 실제 로봇 찾아가기 시험에서 나온 문제 고침: USB 카메라를 picamera2 가 잡던 문제, 쌓인 예전 화면으로 판단하던 문제, 가까이서 낮은 마커를 놓치던 문제 → 카메라로 둘러보기 추가 (테스트 26개)
+- [x] 리모컨 비상 정지 (전원 버튼), 쏟기 서보 + 트레이
+- [ ] `OBSTACLE_CM` 을 실제 제동 거리 보고 조정
 - [x] Wi-Fi 등록(`wifi.sh`)·자동 실행(`autostart.sh`)·로봇 찾기(`find_robot.py`) 도구
 - [ ] 위 도구로 휴대폰 핫스팟 실제 등록 + 자동 실행 켜기 (라즈베리파이에서, sudo 필요)
-- [ ] 실제 로봇으로 찾아가기 시험 → `stations.json` 의 `nav` 값 조정 (속도, 한 걸음 시간, 도착 기준)
-- [ ] 쏟기 장치 정하기 (트레이 + 서보: 아두이노 키트 서보 / 라즈베리파이 핀 / 라즈봇 기판 여분 단자) → `RealDriver.dump()` 구현
+- [ ] 실제 로봇으로 찾아가기 → 쏟기 → 복귀를 처음부터 끝까지 성공시키기 (선이 바퀴에 걸리지 않게 정리), `nav` 값 조정
+- [x] 쏟기 전 옆면 대기 (시간 회전 90° + 카메라 보정 + 옆걸음, 테스트 28개). 실물: 90° 회전 → 쏟기 확인
+- [ ] 통(마커)이 있는 상태로 옆걸음 시험 → `dock_size` 조정
 
 ## AI 코딩 도우미에게 (이 폴더를 수정할 때 지킬 것)
 
@@ -168,4 +183,5 @@ if bot.distance() < 20: bot.beep()
 - **안전**: 이동 명령에는 항상 자동 정지(duration)를 둔다. 속도 상한(`MAX_SPEED`)과 장애물 정지(`OBSTACLE_CM`)를 없애지 않는다. 처음 모터를 돌릴 때는 바퀴를 띄운 상태라고 사람에게 확인받는다.
 - **재부팅·종료**: 라즈베리파이를 재부팅·종료하기 전에 사람에게 묻고, 항상 "**라즈베리파이** 재부팅" 처럼 어느 장치인지 밝힌다. `sudo` 는 비밀번호가 필요하므로 사람이 직접 실행한다.
 - 찾아가기 판단은 `navigator.decide()` (순수 함수) 에 모으고 `tests/test_navigation.py` 에 경우를 추가한다. 가짜 세계 시험은 가상 시계(`VirtualClock`)로 즉시 끝난다.
-- 라즈봇 라이브러리는 `raspbot` 0.1.2 (비공식, I2C 0x2B). 함수 이름은 `drivers.py` 에 정리돼 있다. 서보 위아래는 110° 가 한계.
+- 라즈봇 라이브러리는 `raspbot` 0.1.2 (비공식, I2C 0x2B). 함수 이름은 `drivers.py` 에 정리돼 있다. S2(tilt 채널)는 110° 가 한계이고, 지금은 **쏟기 서보**다.
+- 서버를 끄고 다시 켤 때 `pkill -f "uvicorn server.main"` 은 그 명령을 담은 ssh 셸까지 죽인다 → 스크립트 파일로 실행하거나 `pkill -f "^/home/.*/python.*uvicorn"` 처럼 좁힌다.

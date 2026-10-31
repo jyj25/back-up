@@ -131,6 +131,30 @@ def test_mission_fails_when_marker_missing():
     assert robot.mission.state["phase"] == "failed" and "못 찾았" in robot.mission.state["message"]
 
 
+def test_look_around_turns_toward_marker():
+    # 정면에선 안 보이고 카메라를 오른쪽(50°)으로 돌렸을 때만 보이면 → 오른쪽으로 회전 (기본은 왼쪽), 카메라는 정면으로 복귀
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    target = main.STATIONS["pet"]["marker"]
+    robot.vision.markers = lambda: [Marker(target, 0.0, 0.1)] if robot.driver.state.pan == 50 else []
+    turns = []
+    robot.move = lambda action, speed, ms: turns.append(action)
+
+    async def run():
+        robot.mission.start("pet", dump=False, return_home=False)
+        while len(turns) < 2:
+            await asyncio.sleep(0)
+        robot.mission.cancel()
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert turns[:2] == ["turn_right", "turn_right"]
+    assert robot.driver.state.pan == 90
+
+
 # ---- API ----
 
 def test_mission_api_and_manual_override():
@@ -147,3 +171,87 @@ def test_mission_api_and_manual_override():
         assert s["moving"] == "backward" and s["mission"] == "cancelled"
         m = c.get("/api/mission").json()
         assert m["running"] is False and m["message"] == "수동 조종"
+
+
+def test_marker_lost_when_close_counts_as_arrived():
+    # 크게 보이던 마커가 한 걸음 뒤 사라짐 → 화면 아래로 빠진 것 → 도착 (둘러보지 않음)
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    target = main.STATIONS["can"]["marker"]
+    big = robot.mission.cfg.arrive_size * 0.8
+    frames = iter([[Marker(target, 0.0, big)]])
+    robot.vision.markers = lambda: next(frames, [])
+    moves = []
+    robot.move = lambda action, speed, ms: moves.append(action)
+
+    async def run():
+        robot.mission.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "done"
+    assert moves == ["forward"] and robot.driver.state.pan == 90
+
+
+def test_dock_right_side_before_dump():
+    # 오른쪽으로 쏟는 트레이: 카메라 오른쪽(0°) → 왼쪽으로 약 90° → 옆 화면에서 마커가 오른쪽에 있으면 보정 → 오른쪽 옆걸음
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    robot.mission.cfg.dump_side = "right"
+    target = main.STATIONS["can"]["marker"]
+    st = {"right": 0, "strafes": 0}
+    log = []
+
+    def markers():
+        if robot.driver.state.pan != 0:
+            return []
+        cx = 0.5 if st["right"] == 0 else 0.0   # 90° 돌고 나면 조금 오른쪽 → 한 번 보정
+        return [Marker(target, cx, 0.2 + 0.1 * st["strafes"])]
+
+    def move(action, speed, ms):
+        log.append(action)
+        st["right"] += action == "turn_right"
+        st["strafes"] += action == "strafe_right"
+
+    robot.vision.markers = markers
+    robot.move = move
+
+    async def run():
+        assert await robot.mission._dock_side(robot.mission.stations["can"]) == 2  # 0.2 → 0.3 → 0.4 (≥ 0.35)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert log == ["turn_left", "turn_right", "strafe_right", "strafe_right"]
+    assert robot.driver.state.pan == 0
+
+
+def test_dock_without_marker_still_dumps():
+    # 옆 화면에 마커가 안 보여도 실패하지 않고: 약 90° 돌고 → 쏟고 → 되돌아 회전 → 출발점
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    robot.mission.cfg.dump_side = "right"
+    target = main.STATIONS["can"]["marker"]
+    robot.vision.markers = lambda: [Marker(target, 0.0, 0.4)] if robot.driver.state.pan == 90 else []
+    log = []
+    robot.move = lambda action, speed, ms: log.append(action)
+    robot.driver.dump = lambda: log.append("dump")
+
+    async def run():
+        robot.mission.start("can", dump=True, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "done", robot.mission.state
+    assert log == ["turn_left", "dump", "turn_right"]  # 옆걸음을 안 했으니 빠질 것도 없음
+    assert robot.driver.state.pan == 90

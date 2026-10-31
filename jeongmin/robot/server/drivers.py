@@ -34,7 +34,7 @@ TILT_RANGE = (0, 110)  # 라즈봇 V2 의 위아래 서보는 기구 때문에 1
 # 전원 버튼만 코드 0 이라 레지스터가 "없음" 과 같아 보인다 → 아무 코드 없이 255 가 오면 전원 버튼으로 본다.
 # 쏟기 서보: 고장 난 위아래 서보 자리(S2, 라이브러리의 tilt 채널, 0~110°)에 키트 서보를 꽂아 트레이를 기울인다
 DUMP_REST = int(os.environ.get("DUMP_REST", "0"))     # 평소 (트레이 수평)
-DUMP_ANGLE = int(os.environ.get("DUMP_ANGLE", "90"))  # 쏟을 때
+DUMP_ANGLE = int(os.environ.get("DUMP_ANGLE", "90"))  # 쏟을 때: 반시계로 90° (OLED 반대쪽)
 DUMP_HOLD_S = 1.5
 IR_POWER = 0
 IR_RELEASE = 255

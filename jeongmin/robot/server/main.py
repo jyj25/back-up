@@ -167,7 +167,7 @@ class MoveIn(BaseModel):
 
 
 class ServoIn(BaseModel):
-    pan: int | None = Field(default=None, ge=PAN_RANGE[0], le=PAN_RANGE[1], description="좌우 0~180, 90 이 정면")
+    pan: int | None = Field(default=None, ge=PAN_RANGE[0], le=PAN_RANGE[1], description="좌우 0~180, 90 이 정면, 커질수록 왼쪽 (실측)")
     tilt: int | None = Field(default=None, ge=TILT_RANGE[0], le=TILT_RANGE[1], description="위아래 0~110")
 
 

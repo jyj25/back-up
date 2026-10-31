@@ -15,6 +15,8 @@ class Camera:
         self._lock = threading.Lock()
         self._picam = None
         self._cap = None
+        self._latest = None  # USB 웹캠: 읽기 스레드가 계속 갱신하는 최신 화면
+        self._running = False
         want = os.environ.get("CAMERA", "auto").lower()
         if want in ("auto", "picamera"):
             self._try_picamera()
@@ -45,8 +47,20 @@ class Camera:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                 self._cap, self.kind = cap, "usb"
+                # 웹캠은 사진을 몇 장 쌓아 두므로 read() 한 번이면 예전 화면이 나온다
+                # → 계속 읽어 최신 한 장만 들고 있는다 (돌린 직후에도 지금 화면으로 판단)
+                self._running = True
+                threading.Thread(target=self._read_loop, daemon=True).start()
         except Exception as e:
             print(f"[camera] OpenCV 웹캠 사용 불가: {e}")
+
+    def _read_loop(self) -> None:
+        while self._running:
+            ok, frame = self._cap.read()
+            if ok:
+                self._latest = frame
+            else:
+                time.sleep(0.05)
 
     def frame(self):
         """지금 화면 (BGR numpy 배열). 카메라가 없으면 None."""
@@ -54,8 +68,7 @@ class Camera:
             if self.kind == "picamera":
                 return self._picam.capture_array()  # RGB888 은 실제로 BGR 순서라 OpenCV 에 그대로 넣는다
             if self.kind == "usb":
-                ok, frame = self._cap.read()
-                return frame if ok else None
+                return self._latest
             return None
 
     def jpeg(self, quality: int = 80) -> bytes | None:
@@ -82,4 +95,6 @@ class Camera:
         if self._picam is not None:
             self._picam.stop()
         if self._cap is not None:
+            self._running = False
+            time.sleep(0.1)
             self._cap.release()

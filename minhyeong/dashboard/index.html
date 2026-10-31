@@ -83,7 +83,7 @@
     addEventListener('hashchange', route); route();
 
     const L = Sortbot.LABELS, q = s => document.querySelector(s);
-    const EN = { recycle: 'RECYCLE', general: 'GENERAL', vinyl: 'VINYL' };
+    const EN = { can: 'CAN', pet: 'PET', paper: 'PAPER' };
     q('#tubes').innerHTML = Sortbot.CLASSES.map(c => `
       <div id="bin-${c}" class="flex flex-col items-center gap-2">
         <div class="relative w-full max-w-[64px] h-36 rounded-full border border-[var(--line)] bg-[var(--bg)] overflow-hidden">

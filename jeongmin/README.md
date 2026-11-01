@@ -70,7 +70,7 @@ cd ~/ai2-8/jeongmin/robot
 | `STATIONS_FILE` | `stations.json` | 키트 블록으로 시험할 때 `stations.blocks.json` |
 | `IR_STOP_KEY` | `0` (전원 버튼) | **리모컨 비상 정지** 버튼 코드. `none` 이면 끔 |
 | `DUMP_REST` / `DUMP_ANGLE` | `0` / `90` | 쏟기 서보(S2) 평소 / 쏟을 때 각도 |
-| `DUMP_SWEEP_MS` | `300` | 쏟기 서보가 90° 도는 시간 (클수록 천천히) |
+| `DUMP_SWEEP_MS` | `1000` | 쏟기 서보가 90° 도는 시간 (클수록 천천히) |
 
 자동 실행(`autostart.sh`)일 때는 `robot/robot.env.example` 을 `robot/robot.env` 로 복사해서 고치고 `sudo systemctl restart raspbot`.
 

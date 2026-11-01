@@ -40,6 +40,7 @@ class NavConfig:
     search_steps: int = 40    # (예전 방식) 회전하며 찾는 최대 걸음
     turn_dead_ms: int = 120   # 회전 명령 중 출발하느라 거의 안 도는 시간 (실측: 0.2초에 약 15°)
     scan_step_ms: int = 350   # 한 바퀴 둘러볼 때 한 번에 도는 시간
+    scan_pause_ms: int = 700  # 한 번 돈 뒤 멈춰서 화면이 안정되길 기다리는 시간 (그다음 마커를 찾는다)
     half_fov_deg: float = 30  # 카메라 시야의 반 (cx ±1 이 ±이만큼의 각도)
     visit_steps: int = 14     # 미확인 블록 하나에 다가가며 확인하는 최대 걸음
     look_frames: int = 3      # 한 번 볼 때 합쳐 볼 사진 수
@@ -54,6 +55,8 @@ class NavConfig:
     look_settle_ms: int = 400 # 카메라를 돌린 뒤 화면이 안정될 때까지
     step_limit: int = 300     # 한 정류장까지 최대 걸음 수
     backup_ms: int = 600      # 쏟은 뒤 뒤로 빠지는 시간
+    finish_after_dump: bool = False  # True 면 쏟고 바로 끝 (뒤로 빠지거나 되돌아 돌지 않고, 출발점 복귀도 안 함)
+    rescans: int = 0          # 번호가 맞는 블록을 못 찾으면 처음부터 다시 둘러보는 횟수 (그 블록은 반드시 있을 때)
 
     @classmethod
     def from_dict(cls, d: dict) -> "NavConfig":
@@ -151,10 +154,12 @@ class Mission:
             if dump:
                 side = self.cfg.dump_side
                 strafed = await self._dock_side(self.stations[station]) if side else 0
-                self._set("dumping", f"{self.stations[station]['label']} 에 쏟는 중")
-                await asyncio.to_thread(self.robot.driver.dump)
-                self._set("backing")
-                if side:  # 옆걸음한 만큼 빠지고 원래 방향으로
+                await self._dump_with_tray(self.stations[station]['label'])
+                if not self.cfg.finish_after_dump:
+                    self._set("backing")
+                if self.cfg.finish_after_dump:
+                    pass  # 블록 앞에서 왼쪽으로 90° 돌아 쏟았으면 끝 (뒤로 빠지거나 되돌아 돌지 않는다)
+                elif side:  # 옆걸음한 만큼 빠지고 원래 방향으로
                     if strafed:
                         away = "strafe_left" if side == "right" else "strafe_right"
                         await self._pulse(away, self.cfg.speed, strafed * self.cfg.pulse_ms)
@@ -165,13 +170,68 @@ class Mission:
                     await self._pulse("backward", self.cfg.speed, self.cfg.backup_ms)
             if return_home and station != "home":
                 await self._go("home")
-            self._set("done", "완료")
+            self._set("done", "완료" + (" (트레이에 물건이 남아 있을 수 있음)" if self.state.get("tray_left") else ""))
         except NavError as e:
             await self._stop()
             self._set("failed", str(e))
         except asyncio.CancelledError:
             await self._stop()
             raise
+
+    async def _dump_with_tray(self, label: str) -> None:
+        """샤오 카메라로 트레이를 보고 쏟는다: 쏟기 전에 물건이 떨어질 위치인지, 쏟은 뒤에 비었는지 (안 비면 최대 2번 더)."""
+        tray = getattr(self.robot, "tray", None)
+        if tray is not None and tray.ready:
+            st = None
+            for _ in range(6):  # 물건이 아직 흔들리며 자리 잡는 중일 수 있어 최대 약 5초 기다린다
+                st = await asyncio.to_thread(tray.look)
+                if st is None or not st["present"] or st["in_zone"]:
+                    break
+                await self.sleep(1)
+            if st is not None and not st["present"]:
+                self._set("dumping", "샤오 카메라: 트레이가 비어 있어 쏟지 않음")
+                return
+            if st is not None and not st["in_zone"]:
+                raise NavError("샤오 카메라: 물건이 쏟으면 떨어질 위치에 있지 않습니다")
+        sorter = getattr(self.robot, "sorter", None)
+        for attempt in range(3):  # 처음 한 번 + 안 비면 2배속으로 최대 2번 더
+            fast = attempt > 0
+            self._set("dumping", f"{label} 에 쏟는 중" + (f" (안 비어서 2배속으로 다시 {attempt}번째)" if fast else ""))
+            if fast:
+                await asyncio.to_thread(self.robot.driver.dump, 2.0)
+            else:
+                await asyncio.to_thread(self.robot.driver.dump)
+            if self._board_judges():  # 샤오 판정 영상에서 '비어있음'이 확인되면 끝
+                if await self._wait_empty(sorter):
+                    return
+            elif tray is not None and tray.ready:  # 사진 비교 방식 (판정 영상 대신 사진 모드일 때)
+                await self.sleep(0.8)
+                st = await asyncio.to_thread(tray.look)
+                if st is None or not st["present"]:
+                    return
+            else:
+                return
+        self.state["tray_left"] = True
+        self._set("dumping", "샤오 카메라: 2배속으로 다시 쏟아도 트레이가 비지 않음")
+
+    def _board_judges(self) -> bool:
+        """샤오가 판정 영상(USB)을 보내고 있나"""
+        board = getattr(self.robot, "board", None)
+        return getattr(self.robot, "sorter", None) is not None and bool(getattr(board, "enabled", False))
+
+    async def _wait_empty(self, sorter, timeout: float = 15.0) -> bool:
+        """쏟기가 끝난 뒤에 찍은 샤오 프레임으로 트레이가 비었는지 본다 (모델이 3~4초에 한 장). 빈 트레이면 True, 물건이 보이면 False.
+        시간 안에 프레임이 안 오면(보드 이상) 계속 쏟아 봐야 소용없으니 비었다고 본다."""
+        import time
+        t_end = time.monotonic()
+        waited = 0.0
+        while waited < timeout:
+            r = sorter.empty_after(t_end)
+            if r is not None:
+                return r
+            await self.sleep(0.5)
+            waited += 0.5
+        return True
 
     async def _pulse(self, action: str, speed: int, ms: int) -> None:
         self.robot.move(action, speed, ms + 300)  # 서버 자동 정지는 여유 있게, 실제 정지는 여기서
@@ -232,6 +292,7 @@ class Mission:
             await self._pulse("turn_left", cfg.turn_speed, cfg.scan_step_ms)
             if self.heading == before:  # 각도 설정이 이상하면 끝없이 돌지 않게
                 return sightings
+            await self.sleep(cfg.scan_pause_ms / 1000)  # 멈춰서 화면이 안정된 뒤 마커 찾기 (다음 반복의 _look)
 
     def _unknowns(self, sightings: list[dict], target: int, done: list[float]) -> list[float]:
         """기록에서 아직 확인 안 한 블록 방향들 (가까운(큰) 것부터). 번호를 읽은 다른 통은 빼고, 비슷한 방향은 하나로."""
@@ -324,6 +385,7 @@ class Mission:
         target = info["marker"]
         self.state["target"] = name
         last_size, looked, sightings, done, went_back = 0.0, False, None, [], False
+        rescans_left = cfg.rescans
         for _ in range(cfg.step_limit):
             await self._look()
             self.state["steps"] += 1
@@ -351,6 +413,10 @@ class Mission:
                     continue
                 todo = self._unknowns(sightings, target, done)  # 3) 미확인 블록 하나씩
                 if not todo:
+                    if rescans_left > 0:  # 번호가 맞는 블록은 반드시 있으니, 식별된 블록은 빼고 처음부터 다시 둘러본다
+                        rescans_left -= 1
+                        sightings, done, went_back = None, [], False
+                        continue
                     raise NavError(f"{info['label']} 마커 {target} 번을 못 찾았습니다 (한 바퀴 둘러보고 블록 {len(done)}개 확인)")
                 done.append(todo[0])
                 await self._visit(info, todo[0])

@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field
 
 from .board import BoardReader
 from .board_cam import BoardCamera
+from .tray_check import TrayCheck
 from .camera import Camera
 from .drivers import IR_POWER, LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
@@ -91,6 +92,7 @@ class Robot:
         self.board = BoardReader(_setting("BOARD_PORT", "auto", fake), self._on_board_line)
         # 판정을 안 읽을 때(BOARD_PORT=none)만 보드 카메라 사진을 USB 로 받아 본다 (사진 수집용 펌웨어일 때)
         self.board_cam = None if fake or self.board.enabled else BoardCamera(os.environ.get("BOARD_CAM_PORT", "auto"))
+        self.tray = TrayCheck(self.board_cam, Path(__file__).parent.parent / "tray_empty.jpg", _CONF.get("tray")) if self.board_cam else None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
@@ -355,6 +357,33 @@ def board_camera_jpg():
 @app.get("/api/board/stream")
 def board_stream():
     return StreamingResponse(_board_cam().frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.post("/api/sort/go")
+async def sort_go():
+    """READY 버튼: 샤오가 인식한 라벨(캔/페트/종이)의 통으로 보낸다. 빈 트레이면 물건을 얹어 달라는 오류."""
+    r = robot.sorter.go_now()
+    if not r["ok"]:
+        raise HTTPException(status_code=r["status"], detail=r["reason"])
+    return r
+
+
+@app.get("/api/tray")
+def tray_status():
+    """샤오 카메라로 본 트레이 (빈 트레이 기준 사진이 있어야 함)"""
+    if robot.tray is None:
+        raise HTTPException(status_code=503, detail="샤오 카메라를 쓰지 않습니다 (BOARD_PORT=none 이어야 함)")
+    return {"ready": robot.tray.ready, "look": robot.tray.look()}
+
+
+@app.post("/api/tray/baseline")
+def tray_baseline():
+    """지금 트레이를 '빈 트레이' 기준 사진으로 저장 (트레이를 비운 뒤에 부를 것)"""
+    if robot.tray is None:
+        raise HTTPException(status_code=503, detail="샤오 카메라를 쓰지 않습니다 (BOARD_PORT=none 이어야 함)")
+    if not robot.tray.set_baseline():
+        raise HTTPException(status_code=502, detail="샤오 카메라 사진을 받지 못했습니다")
+    return {"ok": True}
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

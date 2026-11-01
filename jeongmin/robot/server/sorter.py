@@ -19,6 +19,9 @@ from datetime import datetime
 from pathlib import Path
 
 
+EMPTY_MSG = "트레이가 비었습니다. 물건을 얹어 주세요"
+
+
 def parse_line(raw: str | bytes) -> dict | None:
     """한 줄 → JSON 객체(dict). 로그 줄·깨진 줄은 None."""
     if isinstance(raw, bytes):
@@ -41,6 +44,9 @@ class Sorter:
         self.auto = auto
         self.history_file = history_file
         self.last_verdict: dict | None = None
+        self._decided: tuple | None = None  # 샤오가 확정한 (라벨, 확신도, 시각). 빈 트레이가 보이면 지운다
+        self._empty = False                 # 가장 최근 프레임이 빈 트레이였나
+        self._last_frame: tuple | None = None  # (찍은 시각 monotonic, 빈 트레이였나)
         self.current: dict | None = None  # 지금 임무의 {label, confidence, by}
         self.items: list[dict] = []
         self.bins = {name: 0 for name in stations if name != "home"}
@@ -51,14 +57,62 @@ class Sorter:
     def handle(self, obj: dict, source: str = "board") -> dict:
         """판정 하나를 처리하고 {accepted, reason} 를 돌려준다. 이벤트 루프 안에서 부를 것."""
         self.last_verdict = {**obj, "source": source, "time": _now()}
+        self._note(obj)
         reason = self._reject_reason(obj)
         if reason:
             self.last_verdict["result"] = reason
             return {"accepted": False, "reason": reason}
         label = obj["class"]
-        self.start(label, by="ai", confidence=float(obj.get("conf", 0)))
+        self.start(label, by="ai", confidence=float(obj.get("conf", 0)),
+                   return_home=not getattr(self.robot.mission.cfg, "finish_after_dump", False))
         self.last_verdict["result"] = "출발"
         return {"accepted": True, "reason": f"{self.stations[label]['label']} 통으로 출발"}
+
+    def _note(self, obj: dict) -> None:
+        """샤오가 본 것을 기억한다: 빈 트레이면 확정 판정을 잊고, 라벨이 확정되면 적어 둔다."""
+        label = obj.get("class")
+        if "error" in obj:
+            return
+        is_empty = label == "empty" or (label is None and obj.get("n") == 0)
+        try:
+            took = float(obj.get("ms", 0)) / 1000  # 모델이 도는 동안 걸린 시간 → 사진은 그만큼 전에 찍었다
+        except (TypeError, ValueError):
+            took = 0.0
+        self._last_frame = (time.monotonic() - took, is_empty)
+        if label == "empty" or (label is None and obj.get("n") == 0):
+            self._decided, self._empty = None, True
+        elif label in self.bins and obj.get("event", "decision") == "decision":
+            try:
+                conf = float(obj.get("conf", 0))
+            except (TypeError, ValueError):
+                conf = 0.0
+            if conf >= self.min_confidence:
+                self._decided, self._empty = (label, conf, time.monotonic()), False
+        elif label is None and obj.get("n"):
+            self._empty = False
+
+    def empty_after(self, t: float) -> bool | None:
+        """t(monotonic) 뒤에 찍은 샤오 프레임이 빈 트레이면 True, 물건이 보이면 False, 아직 그런 프레임이 없으면 None"""
+        lf = self._last_frame
+        if lf is None or lf[0] <= t:
+            return None
+        return lf[1]
+
+    def go_now(self) -> dict:
+        """READY 버튼: 샤오가 트레이 위 물건을 보고 정한 라벨의 통(마커)으로 보낸다. {ok, reason, status}"""
+        if self.robot.mission.running:
+            return {"ok": False, "status": 409, "reason": "이미 임무 중입니다"}
+        if self._decided is not None:
+            label, conf, _ = self._decided
+            self.start(label, by="ai", confidence=conf,
+                       return_home=not getattr(self.robot.mission.cfg, "finish_after_dump", False))
+            self._decided = None
+            return {"ok": True, "status": 200, "reason": f"{self.stations[label]['label']} 통으로 출발"}
+        if self._empty:
+            return {"ok": False, "status": 422, "reason": EMPTY_MSG}
+        if self.last_verdict is None:
+            return {"ok": False, "status": 503, "reason": "샤오 카메라 판정이 아직 안 왔습니다 (보드 연결 확인)"}
+        return {"ok": False, "status": 425, "reason": "물건을 확인하는 중입니다. 잠시 뒤 다시 눌러 주세요"}
 
     def _reject_reason(self, obj: dict) -> str | None:
         if "error" in obj:
@@ -66,10 +120,12 @@ class Sorter:
         if "event" in obj and obj["event"] != "decision":
             return f"판정 아님 ({obj['event']})"
         label = obj.get("class")
+        if label is None and obj.get("n") == 0:
+            return EMPTY_MSG
         if label is None:
             return "판정 없음"
         if label == "empty":
-            return "빈 트레이"
+            return EMPTY_MSG
         if label not in self.bins:
             return f"모르는 종류: {label}"
         try:

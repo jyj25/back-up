@@ -24,7 +24,7 @@
   },
   "nav": {
     "speed": 70,
-    "turn_speed": 60,
+    "turn_speed": 45,
     "pulse_ms": 250,
     "settle_ms": 150,
     "center_tol": 0.15,
@@ -36,6 +36,25 @@
     "lost_near": 0.5,
     "dump_side": "right",
     "dock_size": 0.12,
-    "turn90_ms": 500
+    "turn90_ms": 667,
+    "scan_step_ms": 250,
+    "dock_steps": 0,
+    "finish_after_dump": true,
+    "rescans": 2
+  },
+  "tray": {
+    "_설명": "샤오 카메라 사진 기준 비율(0~1). roi = 트레이 안쪽만 본다(쏟아진 물건은 사진 위쪽 바닥에 떨어지므로 제외). drop_zone = 물건이 이 안에 있으면 쏟으면 위쪽으로 떨어진다.",
+    "roi": [
+      0.05,
+      0.45,
+      0.72,
+      1.0
+    ],
+    "drop_zone": [
+      0.08,
+      0.47,
+      0.7,
+      0.98
+    ]
   }
 }

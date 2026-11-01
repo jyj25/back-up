@@ -25,9 +25,19 @@ def test_decide_search_turns_toward_last_seen_side():
     assert decide([Marker(2, 0, 0.1)], 1, 200, CFG).phase == "search"  # 다른 마커는 무시
 
 
+def test_decide_far_candidates_get_closer():
+    from server.vision import CANDIDATE
+    far = [Marker(CANDIDATE, 0.6, 0.03), Marker(CANDIDATE, 0.4, 0.03)]       # 번호 못 읽는 네모 둘, 오른쪽
+    s = decide(far, 1, 200, CFG)
+    assert (s.phase, s.action) == ("closer", "turn_right")
+    centered = [Marker(CANDIDATE, -0.1, 0.03), Marker(CANDIDATE, 0.1, 0.03)]
+    assert decide(centered, 1, 200, CFG).action == "forward"
+    assert decide(centered + [Marker(1, 0.5, 0.1)], 1, 200, CFG).phase == "align"  # 목표가 읽히면 목표 우선
+
+
 def test_decide_align_approach_arrive():
     s = decide([Marker(1, 0.6, 0.1)], 1, 200, CFG)
-    assert (s.phase, s.action) == ("align", "turn_right") and 60 <= s.ms <= CFG.pulse_ms
+    assert (s.phase, s.action) == ("align", "turn_right") and CFG.turn_dead_ms < s.ms < CFG.turn90_ms
     assert decide([Marker(1, -0.6, 0.1)], 1, 200, CFG).action == "turn_left"
     assert decide([Marker(1, 0.05, 0.1)], 1, 200, CFG).action == "forward"
     assert decide([Marker(1, 0.05, 0.35)], 1, 200, CFG).phase == "arrived"   # 마커가 큼
@@ -47,7 +57,7 @@ def test_detect_printed_markers():
     frame = np.full((480, 640), 255, np.uint8)
     frame[40:240, 400:600] = cv2.aruco.generateImageMarker(d, 1, 200)   # 오른쪽에 크게
     frame[300:380, 60:140] = cv2.aruco.generateImageMarker(d, 3, 80)    # 왼쪽에 작게
-    found = detect(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
+    found = [m for m in detect(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)) if m.id >= 0]
     assert [m.id for m in found] == [1, 3]
     assert found[0].cx > 0.3 and abs(found[0].size - 200 / 640) < 0.02
     assert found[1].cx < -0.5
@@ -67,8 +77,8 @@ def test_detect_kit_block_apriltags():
     frame = np.full((480, 640), 255, np.uint8)
     frame[100:220, 100:220] = cv2.aruco.generateImageMarker(d, 2, 120)
     frame[100:220, 400:520] = cv2.aruco.generateImageMarker(d, 4, 120)
-    assert sorted(m.id for m in detect(frame, make_detector(conf["marker_dict"]))) == [2, 4]
-    assert detect(frame) == []  # 기본(4x4) 마커로는 안 보인다
+    assert sorted(m.id for m in detect(frame, make_detector(conf["marker_dict"])) if m.id >= 0) == [2, 4]
+    assert all(m.id < 0 for m in detect(frame))  # 기본(4x4) 사전으로는 번호를 못 읽는다 (후보 네모일 뿐)
 
 
 # ---- 가짜 세계에서 임무 전체 (가상 시계라 바로 끝남) ----
@@ -143,7 +153,7 @@ def test_look_around_turns_toward_marker():
 
     async def run():
         robot.mission.start("pet", dump=False, return_home=False)
-        while len(turns) < 2:
+        while len(turns) < 1:
             await asyncio.sleep(0)
         robot.mission.cancel()
 
@@ -151,7 +161,7 @@ def test_look_around_turns_toward_marker():
         asyncio.run(run())
     finally:
         robot.close()
-    assert turns[:2] == ["turn_right", "turn_right"]
+    assert turns[0] == "turn_right"            # 찾은 쪽으로 한 번만 회전
     assert robot.driver.state.pan == 90
 
 
@@ -255,3 +265,92 @@ def test_dock_without_marker_still_dumps():
     assert robot.mission.state["phase"] == "done", robot.mission.state
     assert log == ["turn_left", "dump", "turn_right"]  # 옆걸음을 안 했으니 빠질 것도 없음
     assert robot.driver.state.pan == 90
+
+
+def test_mission_walks_to_far_candidates_then_target():
+    # 처음엔 번호 못 읽는 네모만 보임 → 앞으로 → 가까워지면 목표 번호가 읽혀 도착
+    from server.vision import CANDIDATE
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    target = main.STATIONS["can"]["marker"]
+    st = {"fwd": 0}
+    def markers():
+        if st["fwd"] < 2:
+            return [Marker(CANDIDATE, 0.0, 0.03)]
+        return [Marker(target, 0.0, 0.4)]
+    def move(action, speed, ms):
+        st["fwd"] += action == "forward"
+    robot.vision.markers = markers
+    robot.move = move
+
+    async def run():
+        robot.mission.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "done", robot.mission.state
+    assert st["fwd"] == 2
+
+
+def _bare_mission():
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    return robot
+
+
+def test_nothing_around_turns_once_then_stops():
+    robot = _bare_mission()
+    robot.vision.markers = lambda: []
+    turns = []
+    robot.move = lambda action, speed, ms: turns.append(robot.mission._turn_deg(action, ms - 300))  # move 에는 자동 정지 여유 300ms 가 붙는다
+
+    async def run():
+        robot.mission.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "failed" and "한 바퀴" in robot.mission.state["message"]
+    assert 360 <= sum(turns) < 360 + 90                     # 딱 한 바퀴만
+
+
+def test_scan_then_visit_unknown_block():
+    # 왼쪽 약 90° 에 번호를 못 읽는 블록 → 한 바퀴 기록 → 그쪽으로 돌아 다가감 → 번호가 읽히면 목표
+    from server.vision import CANDIDATE
+    robot = _bare_mission()
+    m = robot.mission
+    target = main.STATIONS["can"]["marker"]
+    st = {"fwd": 0}
+
+    def markers():
+        if robot.driver.state.pan != 90:
+            return []
+        rel = (90 - m.heading + 180) % 360 - 180            # 블록 방향 − 지금 방향 (+ = 왼쪽)
+        if abs(rel) > 25:
+            return []
+        cx = round(-rel / m.cfg.half_fov_deg, 3)
+        return [Marker(target, cx, 0.4)] if st["fwd"] >= 2 else [Marker(CANDIDATE, cx, 0.03)]
+
+    def move(action, speed, ms):
+        st["fwd"] += action == "forward"
+
+    robot.vision.markers = markers
+    robot.move = move
+
+    async def run():
+        m.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(m.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert m.state["phase"] == "done", m.state
+    assert st["fwd"] == 2

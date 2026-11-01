@@ -36,7 +36,7 @@ TILT_RANGE = (0, 110)  # 라즈봇 V2 의 위아래 서보는 기구 때문에 1
 DUMP_REST = int(os.environ.get("DUMP_REST", "0"))     # 평소 (트레이 수평)
 DUMP_ANGLE = int(os.environ.get("DUMP_ANGLE", "90"))  # 쏟을 때: 반시계로 90° (OLED 반대쪽)
 DUMP_HOLD_S = 1.5
-DUMP_SWEEP_S = float(os.environ.get("DUMP_SWEEP_MS", "300")) / 1000  # 90° 도는 시간. 서보 최고속(약 0.15초)의 절반 속도
+DUMP_SWEEP_S = float(os.environ.get("DUMP_SWEEP_MS", "1000")) / 1000  # 90° 도는 시간 (0.3초도 빨라서 물건이 튐 → 1초)
 IR_POWER = 0
 IR_RELEASE = 255
 
@@ -191,9 +191,8 @@ class RealDriver(FakeDriver):
             time.sleep(DUMP_SWEEP_S * step / 90)
 
     def dump(self) -> None:
-        # 노란 LED + 삐 → 쏟기 서보로 트레이를 기울였다가 원위치
-        self.set_led("yellow")
-        self.beep(40)  # 부저는 켜고 끄기만 돼서 소리 크기는 못 줄인다 → 짧게
+        # 노란 LED → 쏟기 서보로 트레이를 기울였다가 원위치
+        self.set_led("yellow")  # 부저는 소리 크기를 못 줄이고 너무 커서 쏟을 때는 노란 불만
         self._sweep(DUMP_REST, DUMP_ANGLE)
         time.sleep(DUMP_HOLD_S)
         self._sweep(DUMP_ANGLE, DUMP_REST)

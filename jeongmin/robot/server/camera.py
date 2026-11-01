@@ -5,6 +5,7 @@ CAMERA=picamera|usb|none 으로 고를 수 있다. USB 웹캠 번호는 CAMERA_I
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 
@@ -42,7 +43,15 @@ class Camera:
         try:
             import cv2
 
-            cap = cv2.VideoCapture(index)
+            # 리눅스는 V4L2 로 바로 연다 (기본값은 다른 방식부터 시도하다 실패하기도 함).
+            # 서버를 껐다 바로 켜면 이전 프로세스가 카메라를 아직 쥐고 있을 수 있어 몇 번 다시 시도
+            backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
+            for _ in range(5):
+                cap = cv2.VideoCapture(index, backend)
+                if cap.isOpened():
+                    break
+                cap.release()
+                time.sleep(0.5)
             if cap.isOpened():
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -68,6 +77,10 @@ class Camera:
             if self.kind == "picamera":
                 return self._picam.capture_array()  # RGB888 은 실제로 BGR 순서라 OpenCV 에 그대로 넣는다
             if self.kind == "usb":
+                for _ in range(20):  # 막 켜졌으면 첫 장을 잠깐 기다린다
+                    if self._latest is not None:
+                        break
+                    time.sleep(0.05)
                 return self._latest
             return None
 

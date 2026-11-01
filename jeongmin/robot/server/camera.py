@@ -77,6 +77,10 @@ class Camera:
             if self.kind == "picamera":
                 return self._picam.capture_array()  # RGB888 은 실제로 BGR 순서라 OpenCV 에 그대로 넣는다
             if self.kind == "usb":
+                for _ in range(20):  # 막 켜졌으면 첫 장을 잠깐 기다린다
+                    if self._latest is not None:
+                        break
+                    time.sleep(0.05)
                 return self._latest
             return None
 

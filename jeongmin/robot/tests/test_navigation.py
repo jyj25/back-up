@@ -37,7 +37,7 @@ def test_decide_far_candidates_get_closer():
 
 def test_decide_align_approach_arrive():
     s = decide([Marker(1, 0.6, 0.1)], 1, 200, CFG)
-    assert (s.phase, s.action) == ("align", "turn_right") and 60 <= s.ms <= CFG.pulse_ms
+    assert (s.phase, s.action) == ("align", "turn_right") and CFG.turn_dead_ms < s.ms < CFG.turn90_ms
     assert decide([Marker(1, -0.6, 0.1)], 1, 200, CFG).action == "turn_left"
     assert decide([Marker(1, 0.05, 0.1)], 1, 200, CFG).action == "forward"
     assert decide([Marker(1, 0.05, 0.35)], 1, 200, CFG).phase == "arrived"   # 마커가 큼
@@ -153,7 +153,7 @@ def test_look_around_turns_toward_marker():
 
     async def run():
         robot.mission.start("pet", dump=False, return_home=False)
-        while len(turns) < 2:
+        while len(turns) < 1:
             await asyncio.sleep(0)
         robot.mission.cancel()
 
@@ -161,7 +161,7 @@ def test_look_around_turns_toward_marker():
         asyncio.run(run())
     finally:
         robot.close()
-    assert turns[:2] == ["turn_right", "turn_right"]
+    assert turns[0] == "turn_right"            # 찾은 쪽으로 한 번만 회전
     assert robot.driver.state.pan == 90
 
 
@@ -293,4 +293,64 @@ def test_mission_walks_to_far_candidates_then_target():
     finally:
         robot.close()
     assert robot.mission.state["phase"] == "done", robot.mission.state
+    assert st["fwd"] == 2
+
+
+def _bare_mission():
+    robot = main.Robot()
+    clock = VirtualClock()
+    robot.mission.sleep = clock.sleep
+    return robot
+
+
+def test_nothing_around_turns_once_then_stops():
+    robot = _bare_mission()
+    robot.vision.markers = lambda: []
+    turns = []
+    robot.move = lambda action, speed, ms: turns.append(robot.mission._turn_deg(action, ms - 300))  # move 에는 자동 정지 여유 300ms 가 붙는다
+
+    async def run():
+        robot.mission.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(robot.mission.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert robot.mission.state["phase"] == "failed" and "한 바퀴" in robot.mission.state["message"]
+    assert 360 <= sum(turns) < 360 + 90                     # 딱 한 바퀴만
+
+
+def test_scan_then_visit_unknown_block():
+    # 왼쪽 약 90° 에 번호를 못 읽는 블록 → 한 바퀴 기록 → 그쪽으로 돌아 다가감 → 번호가 읽히면 목표
+    from server.vision import CANDIDATE
+    robot = _bare_mission()
+    m = robot.mission
+    target = main.STATIONS["can"]["marker"]
+    st = {"fwd": 0}
+
+    def markers():
+        if robot.driver.state.pan != 90:
+            return []
+        rel = (90 - m.heading + 180) % 360 - 180            # 블록 방향 − 지금 방향 (+ = 왼쪽)
+        if abs(rel) > 25:
+            return []
+        cx = round(-rel / m.cfg.half_fov_deg, 3)
+        return [Marker(target, cx, 0.4)] if st["fwd"] >= 2 else [Marker(CANDIDATE, cx, 0.03)]
+
+    def move(action, speed, ms):
+        st["fwd"] += action == "forward"
+
+    robot.vision.markers = markers
+    robot.move = move
+
+    async def run():
+        m.start("can", dump=False, return_home=False)
+        await asyncio.wait_for(m.wait(), 5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        robot.close()
+    assert m.state["phase"] == "done", m.state
     assert st["fwd"] == 2

@@ -14,8 +14,9 @@ from .vision import Marker
 SIM_LAYOUT = {0: (-0.8, 0.0), 1: (1.2, 0.6), 2: (1.2, 0.0), 3: (1.2, -0.6)}
 
 M_PER_S_AT_100 = 0.25      # speed 100 일 때 직진 속도 (m/s)
-DEG_PER_S_AT_100 = 90.0    # speed 100 일 때 제자리 회전 (°/s)
+DEG_PER_S_AT_100 = 395.0   # speed 100 일 때 제자리 회전 (°/s). 실측: speed 60 으로 (0.5초 − 출발 0.12초) 에 약 90°
 FOV_DEG = 66.0             # 카메라 모듈 3 가로 화각
+TURN_DEAD_S = 0.12         # 실측: 회전 명령 후 이만큼은 거의 안 돈다 (0.2초에 약 15°)
 MARKER_M = 0.10            # 인쇄한 마커 한 변 10cm
 SEE_M = 3.0                # 이보다 멀면 마커가 안 보인다고 친다
 ULTRA_DEG = 12.0           # 초음파가 보는 폭 (±)
@@ -42,6 +43,7 @@ class World:
         self.action: str | None = None
         self.speed = 0
         self._t = clock()
+        self._started = self._t  # 지금 동작을 시작한 시각
 
     def set_clock(self, clock) -> None:
         self._advance()
@@ -54,13 +56,17 @@ class World:
             return
         fwd, left, turn = _MOTION[self.action]
         v = self.speed / 100 * M_PER_S_AT_100
-        self.heading = _wrap(self.heading + turn * math.radians(self.speed / 100 * DEG_PER_S_AT_100) * dt)
+        if turn:  # 출발 직후는 거의 안 돈다
+            dt_turn = max(0.0, now - max(self._started + TURN_DEAD_S, now - dt))
+            self.heading = _wrap(self.heading + turn * math.radians(self.speed / 100 * DEG_PER_S_AT_100) * dt_turn)
         c, s = math.cos(self.heading), math.sin(self.heading)
         self.x += (fwd * c - left * s) * v * dt
         self.y += (fwd * s + left * c) * v * dt
 
     def set_motion(self, action: str | None, speed: int) -> None:
         self._advance()
+        if action != self.action:
+            self._started = self.clock()
         self.action, self.speed = action, speed
 
     def _seen(self):

@@ -62,7 +62,7 @@ $('led').addEventListener('change', () => api('POST', '/api/led', { color: $('le
 
 // ---- 통 찾아가기 ----
 const PHASES = {
-  idle: '대기', starting: '시작', look: '둘러보는 중', closer: '멀리 보이는 마커로 다가가는 중', search: '마커 찾는 중', align: '방향 맞추는 중', approach: '다가가는 중',
+  idle: '대기', starting: '시작', look: '둘러보는 중', scan: '한 바퀴 둘러보는 중', visit: '블록 확인하러 가는 중', closer: '멀리 보이는 마커로 다가가는 중', search: '마커 찾는 중', align: '방향 맞추는 중', approach: '다가가는 중',
   arrived: '도착', docking: '옆면 맞추는 중', dumping: '쏟는 중', backing: '뒤로 빠지는 중', done: '완료', failed: '실패', cancelled: '취소됨',
 };
 

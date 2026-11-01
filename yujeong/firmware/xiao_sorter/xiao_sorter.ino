@@ -7,8 +7,9 @@
 //
 // 준비: Arduino 라이브러리 폴더에 Edge Impulse 라이브러리(jyj25-project-1_inferencing, EI 에서 내려받은 것)가 있어야 한다.
 // 보드: FQBN esp32:esp32:XIAO_ESP32S3:PSRAM=opi
-// ESP32-S3 의 ESP-NN 가속이 모델 실행 중 힙을 깨뜨려(free 에서 CORRUPT HEAP, 계속 재부팅) 끈다. 느려지지만 안정적이다.
-#define EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN 0
+// 모델 라이브러리를 EON 컴파일(tflite-eon) 판으로 쓰면 ESP-NN 가속이 모델 실행 중 힙을 깨뜨린다(free 에서 CORRUPT HEAP, 재부팅 반복).
+// 그때는 빌드 옵션으로 가속을 꺼야 한다(느려짐): -DEI_CLASSIFIER_TFLITE_ENABLE_ESP_NN=0 (compiler.cpp.extra_flags / compiler.c.extra_flags).
+// 일반 tflite 판 라이브러리면 기본 설정(가속 켜짐)으로 쓴다.
 #include <jyj25-project-1_inferencing.h>
 #include "esp_camera.h"
 #include "detect_logic.h"
@@ -224,7 +225,12 @@ void loop() {
   signal.total_length = IN_W * IN_H;
   signal.get_data = &get_data;
   ei_impulse_result_t res = {0};
-  if (run_classifier(&signal, &res, false) != EI_IMPULSE_OK) { Serial.println("{\"error\":\"model\"}"); delay(200); return; }
+  EI_IMPULSE_ERROR rc = run_classifier(&signal, &res, false);
+  if (rc != EI_IMPULSE_OK) {
+    Serial.printf("{\"error\":\"model\",\"code\":%d,\"heap\":%u,\"psram\":%u}\n", (int)rc, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+    delay(200);
+    return;
+  }
 
   detect::Det dets[32];
   int n = 0;

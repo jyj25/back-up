@@ -93,6 +93,12 @@ class Robot:
         # 판정을 안 읽을 때(BOARD_PORT=none)만 보드 카메라 사진을 USB 로 받아 본다 (사진 수집용 펌웨어일 때)
         self.board_cam = None if fake or self.board.enabled else BoardCamera(os.environ.get("BOARD_CAM_PORT", "auto"))
         self.tray = TrayCheck(self.board_cam, Path(__file__).parent.parent / "tray_empty.jpg", _CONF.get("tray")) if self.board_cam else None
+        # JUDGE=pi: 샤오는 사진만 보내고(USB) 파이가 모델을 돌려 판정한다 (보드 안 모델은 3.6초, 파이는 약 7ms)
+        self.judge = None
+        if os.environ.get("JUDGE", "").lower() == "pi" and self.board_cam:
+            from .judge import PiJudge
+            self.judge = PiJudge(self.board_cam, os.environ.get("JUDGE_MODEL", str(Path(__file__).parent.parent / "model" / "jyj25.eim")),
+                                 self._on_board_line)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
@@ -102,6 +108,8 @@ class Robot:
         self._loop = asyncio.get_running_loop()
         self._watchdog = asyncio.create_task(self._watch())
         self.board.start()
+        if self.judge:
+            self.judge.start()
 
     def _on_board_line(self, line: str) -> None:
         """보드 읽기 스레드에서 불린다 → 판정 처리는 이벤트 루프로 넘긴다"""
@@ -143,6 +151,8 @@ class Robot:
         self._stop_at = time.monotonic() + duration_ms / 1000
 
     def close(self) -> None:
+        if self.judge:
+            self.judge.stop()
         self.board.stop()
         if self._watchdog:
             self._watchdog.cancel()
@@ -304,8 +314,11 @@ async def verdict(obj: dict = Body(..., examples=[{"class": "can", "conf": 0.93,
 
 @app.get("/api/sort")
 def sort_state():
+    board = robot.board.status()
+    if robot.judge is not None:  # 파이 판정: USB 보드를 읽는 게 아니므로 화면에 맞게 알려 준다
+        board = {"want": "pi", "port": "파이 판정 (샤오 사진)", "error": robot.judge.error, "last_line_at": board.get("last_line_at")}
     return {"auto": robot.sorter.auto, "min_confidence": robot.sorter.min_confidence,
-            "board": robot.board.status(), "last_verdict": robot.sorter.last_verdict}
+            "board": board, "last_verdict": robot.sorter.last_verdict, "last_decision": robot.sorter.last_decision}
 
 
 @app.post("/api/sort")
@@ -357,6 +370,17 @@ def board_camera_jpg():
 @app.get("/api/board/stream")
 def board_stream():
     return StreamingResponse(_board_cam().frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/api/judge")
+def judge_status():
+    """파이 판정(JUDGE=pi) 상태: 마지막 검출과 확정 진행 (왜 확정이 안 나는지 볼 때)"""
+    j = robot.judge
+    if j is None:
+        raise HTTPException(status_code=503, detail="파이 판정을 쓰지 않습니다 (JUDGE=pi, BOARD_PORT=none)")
+    d = j.detector
+    return {"error": j.error, "frames": j.frames, "ms": j.last_ms, "dets": j.last_dets,
+            "candidate": d.cand, "streak": d.streak, "waiting_for_empty": d.waiting}
 
 
 @app.post("/api/sort/go")

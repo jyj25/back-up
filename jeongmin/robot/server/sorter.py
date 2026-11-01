@@ -44,6 +44,7 @@ class Sorter:
         self.auto = auto
         self.history_file = history_file
         self.last_verdict: dict | None = None
+        self.last_decision: dict | None = None  # 마지막 확정 판정 (프레임이 last_verdict 를 덮어써도 남는다)
         self._decided: tuple | None = None  # 샤오가 확정한 (라벨, 확신도, 시각). 빈 트레이가 보이면 지운다
         self._empty = False                 # 가장 최근 프레임이 빈 트레이였나
         self._last_frame: tuple | None = None  # (찍은 시각 monotonic, 빈 트레이였나)
@@ -57,6 +58,8 @@ class Sorter:
     def handle(self, obj: dict, source: str = "board") -> dict:
         """판정 하나를 처리하고 {accepted, reason} 를 돌려준다. 이벤트 루프 안에서 부를 것."""
         self.last_verdict = {**obj, "source": source, "time": _now()}
+        if isinstance(obj.get("class"), str) and "error" not in obj:
+            self.last_decision = self.last_verdict  # 같은 dict 라서 아래에서 result 가 채워지면 같이 보인다
         self._note(obj)
         reason = self._reject_reason(obj)
         if reason:

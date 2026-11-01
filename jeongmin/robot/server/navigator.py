@@ -217,7 +217,8 @@ class Mission:
     def _board_judges(self) -> bool:
         """샤오가 판정 영상(USB)을 보내고 있나"""
         board = getattr(self.robot, "board", None)
-        return getattr(self.robot, "sorter", None) is not None and bool(getattr(board, "enabled", False))
+        reads = bool(getattr(board, "enabled", False)) or getattr(self.robot, "judge", None) is not None
+        return getattr(self.robot, "sorter", None) is not None and reads
 
     async def _wait_empty(self, sorter, timeout: float = 15.0) -> bool:
         """쏟기가 끝난 뒤에 찍은 샤오 프레임으로 트레이가 비었는지 본다 (모델이 3~4초에 한 장). 빈 트레이면 True, 물건이 보이면 False.

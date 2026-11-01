@@ -191,9 +191,8 @@ class RealDriver(FakeDriver):
             time.sleep(DUMP_SWEEP_S * step / 90)
 
     def dump(self) -> None:
-        # 노란 LED + 삐 → 쏟기 서보로 트레이를 기울였다가 원위치
-        self.set_led("yellow")
-        self.beep(40)  # 부저는 켜고 끄기만 돼서 소리 크기는 못 줄인다 → 짧게
+        # 노란 LED → 쏟기 서보로 트레이를 기울였다가 원위치
+        self.set_led("yellow")  # 부저는 소리 크기를 못 줄이고 너무 커서 쏟을 때는 노란 불만
         self._sweep(DUMP_REST, DUMP_ANGLE)
         time.sleep(DUMP_HOLD_S)
         self._sweep(DUMP_ANGLE, DUMP_REST)

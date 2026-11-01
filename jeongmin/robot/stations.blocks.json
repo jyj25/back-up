@@ -1,0 +1,41 @@
+{
+  "_설명": "라즈봇 키트 블록(윗면 AprilTag 36h11, 1~4번)을 바닥 통 앞에 두고 시험할 때. STATIONS_FILE=stations.blocks.json 로 고른다. 블록은 한 변 약 4cm 라 가까이 가야 커지므로 arrive_size 를 낮췄다. 블록은 작아서 초음파가 뒤쪽 물체를 재므로 초음파 도착 판단은 끈다 (arrive_cm 0).",
+  "marker_dict": "DICT_APRILTAG_36h11",
+  "stations": {
+    "home": {
+      "marker": 1,
+      "label": "출발점 (물건 싣는 곳)"
+    },
+    "can": {
+      "marker": 2,
+      "label": "캔"
+    },
+    "pet": {
+      "marker": 3,
+      "label": "페트"
+    },
+    "paper": {
+      "marker": 4,
+      "label": "종이"
+    }
+  },
+  "sort": {
+    "min_confidence": 0.8
+  },
+  "nav": {
+    "speed": 70,
+    "turn_speed": 60,
+    "pulse_ms": 250,
+    "settle_ms": 150,
+    "center_tol": 0.15,
+    "arrive_size": 0.15,
+    "arrive_cm": 0,
+    "search_steps": 40,
+    "step_limit": 300,
+    "backup_ms": 600,
+    "lost_near": 0.5,
+    "dump_side": "right",
+    "dock_size": 0.12,
+    "turn90_ms": 500
+  }
+}

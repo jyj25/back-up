@@ -1,0 +1,8 @@
+fastapi[standard]>=0.115
+pytest>=8
+pyserial>=3.5          # 분류 보드 USB (없으면 보드 읽기만 꺼짐)
+# 라즈베리파이에서만 (I2C 하드웨어 필요):
+#   raspbot>=0.1.2      pip install raspbot
+#   picamera2           sudo apt install python3-picamera2 (venv 는 --system-site-packages 로)
+#   opencv                  마커 찾기·USB 웹캠: sudo apt install python3-opencv (venv 는 --system-site-packages)
+# 노트북에서 마커 테스트·인쇄: pip install opencv-python-headless (없으면 마커 영상 테스트만 건너뜀)

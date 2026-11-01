@@ -1,0 +1,152 @@
+"""AI 판정(IF-01) → 통 임무 시작, 그리고 처리 기록(IF-04).
+
+판정 한 줄 (yujeong/docs/A07-interface.md 의 판정 JSON):
+    {"class":"can","conf":0.93,"ms":173}     확정된 판정 → 자동 출발이 켜져 있으면 can 통으로
+    {"class":null,"conf":0.41,"ms":173}      판정 없음 → 무시
+    {"error":"camera"}                       보드 오류 → 무시 (마지막 판정에 기록)
+'{' 로 시작하지 않는 줄(부팅·디버그 로그)은 parse_line 에서 버린다.
+"event" 필드가 있으면 "decision" 일 때만 판정으로 본다 (확정 신호 방식이 바뀌어도 받도록).
+
+출발 조건: 자동 출발 켜짐 · 임무 중 아님 · class 가 통 이름(home 제외) · conf ≥ min_confidence.
+기록은 임무가 끝날 때 한 줄씩 (done / failed / cancelled). HISTORY_FILE 에 JSON 줄로 이어 쓴다.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+
+
+def parse_line(raw: str | bytes) -> dict | None:
+    """한 줄 → JSON 객체(dict). 로그 줄·깨진 줄은 None."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    line = raw.strip()
+    if not line.startswith("{"):
+        return None
+    try:
+        obj = json.loads(line)
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+class Sorter:
+    def __init__(self, robot, stations: dict, min_confidence: float = 0.8,
+                 auto: bool = False, history_file: Path | None = None) -> None:
+        self.robot, self.stations = robot, stations
+        self.min_confidence = min_confidence
+        self.auto = auto
+        self.history_file = history_file
+        self.last_verdict: dict | None = None
+        self.current: dict | None = None  # 지금 임무의 {label, confidence, by}
+        self.items: list[dict] = []
+        self.bins = {name: 0 for name in stations if name != "home"}
+        self._load()
+
+    # ---- 판정 받기 ----
+
+    def handle(self, obj: dict, source: str = "board") -> dict:
+        """판정 하나를 처리하고 {accepted, reason} 를 돌려준다. 이벤트 루프 안에서 부를 것."""
+        self.last_verdict = {**obj, "source": source, "time": _now()}
+        reason = self._reject_reason(obj)
+        if reason:
+            self.last_verdict["result"] = reason
+            return {"accepted": False, "reason": reason}
+        label = obj["class"]
+        self.start(label, by="ai", confidence=float(obj.get("conf", 0)))
+        self.last_verdict["result"] = "출발"
+        return {"accepted": True, "reason": f"{self.stations[label]['label']} 통으로 출발"}
+
+    def _reject_reason(self, obj: dict) -> str | None:
+        if "error" in obj:
+            return f"보드 오류: {obj['error']}"
+        if "event" in obj and obj["event"] != "decision":
+            return f"판정 아님 ({obj['event']})"
+        label = obj.get("class")
+        if label is None:
+            return "판정 없음"
+        if label == "empty":
+            return "빈 트레이"
+        if label not in self.bins:
+            return f"모르는 종류: {label}"
+        try:
+            conf = float(obj.get("conf", 0))
+        except (TypeError, ValueError):
+            return "확신도 형식 오류"
+        if conf < self.min_confidence:
+            return f"확신도 낮음 ({conf:.2f} < {self.min_confidence})"
+        if not self.auto:
+            return "자동 출발 꺼짐"
+        if self.robot.mission.running:
+            return "임무 중"
+        return None
+
+    # ---- 임무 시작·기록 ----
+
+    def start(self, station: str, by: str = "web", confidence: float | None = None,
+              dump: bool = True, return_home: bool = True) -> None:
+        """임무 시작 + 끝나면 기록. 웹(/api/mission)과 AI 판정이 모두 여기를 지난다."""
+        self.robot.mission.start(station, dump, return_home)
+        self.current = {"label": station, "confidence": confidence, "by": by, "_t0": time.monotonic()}
+        asyncio.get_running_loop().create_task(self._record_when_done(self.current))
+
+    async def _record_when_done(self, cur: dict) -> None:
+        await self.robot.mission.wait()
+        st = self.robot.mission.state
+        phase = st["phase"] if st["phase"] in ("done", "failed", "cancelled") else "cancelled"
+        item = {
+            "id": len(self.items) + 1, "time": _now(), "label": cur["label"],
+            "confidence": cur["confidence"], "by": cur["by"], "result": phase,
+            "seconds": round(time.monotonic() - cur["_t0"], 1), "steps": st["steps"], "message": st["message"],
+        }
+        self.items.append(item)
+        if phase == "done" and cur["label"] in self.bins:
+            self.bins[cur["label"]] += 1
+        if self.current is cur:
+            self.current = None
+        self._append(item)
+
+    def reset(self, station: str | None = None) -> None:
+        """통 비우기: 개수만 0 으로 (기록은 남긴다)"""
+        for name in ([station] if station else list(self.bins)):
+            self.bins[name] = 0
+        self._append({"reset": station or "all", "time": _now()})
+
+    def history(self) -> dict:
+        return {"bins": dict(self.bins), "items": list(self.items)}
+
+    # ---- 파일 ----
+
+    def _append(self, row: dict) -> None:
+        if not self.history_file:
+            return
+        try:
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.history_file.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError as e:
+            print(f"[sorter] 기록 저장 실패: {e}")
+
+    def _load(self) -> None:
+        """서버를 다시 켜도 기록·개수가 이어지게 파일을 다시 읽는다."""
+        if not self.history_file or not self.history_file.exists():
+            return
+        for line in self.history_file.read_text(encoding="utf-8").splitlines():
+            row = parse_line(line)
+            if not row:
+                continue
+            if "reset" in row:
+                for name in (list(self.bins) if row["reset"] == "all" else [row["reset"]]):
+                    if name in self.bins:
+                        self.bins[name] = 0
+            elif "result" in row:
+                self.items.append(row)
+                if row["result"] == "done" and row.get("label") in self.bins:
+                    self.bins[row["label"]] += 1
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>물체 검출 테스트</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --mut:#667085; --line:#d9dde3; --acc:#2563eb; --ok:#15803d; --bad:#b42318; --warn:#b45309; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --card:#1d2128; --fg:#e8eaee; --mut:#9aa3b0; --line:#323944; --acc:#6ea0ff; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; } }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,"Malgun Gothic",sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:13px; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:760px) { .grid { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  button, select { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); cursor:pointer; }
+  button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  #stage { position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; }
+  #stage video, #stage img { max-width:100%; max-height:100%; display:block; }
+  #drop { border:2px dashed var(--line); border-radius:8px; padding:28px; text-align:center; color:var(--mut); }
+  #drop.over { border-color:var(--acc); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+  #status { color:var(--mut); font-size:13px; min-height:20px; margin-top:6px; }
+  #verdict { font-size:26px; font-weight:700; margin:2px 0 2px; }
+  #verdict small { font-size:13px; font-weight:400; color:var(--mut); }
+  .bar { display:grid; grid-template-columns:110px 1fr 52px; gap:8px; align-items:center; margin:5px 0; }
+  .bar .t { height:16px; background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .bar .t i { display:block; height:100%; background:var(--acc); }
+  .bar.top .t i { background:var(--ok); }
+  .bar b { font-weight:600; } .bar span { text-align:right; font-variant-numeric:tabular-nums; }
+  #model { width:96px; height:96px; image-rendering:pixelated; border:1px solid var(--line); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { border:1px solid var(--line); padding:3px 6px; text-align:center; }
+  th { color:var(--mut); font-weight:500; }
+  td.d { background:rgba(37,99,235,.12); font-weight:600; }
+  .note { font-size:12px; color:var(--mut); margin-top:6px; }
+  .warn { color:var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <h1>물체 검출 테스트</h1>
+  <div class="sub">Edge Impulse 객체 검출(FOMO, int8, 96×96) 모델을 이 브라우저에서 그대로 돌립니다. 물체마다 위치와 종류를 표시합니다. 서버·인터넷 없이 동작합니다.
+    <span class="warn" id="modelWarn"></span></div>
+
+  <div class="grid">
+    <section class="card">
+      <div class="tabs">
+        <button data-m="webcam" class="on">웹캠</button>
+        <button data-m="usb">ESP32 USB</button>
+        <button data-m="file">사진 파일</button>
+      </div>
+      <div id="stage"><video id="video" autoplay muted playsinline></video><img id="img" hidden alt=""></div>
+      <div id="drop" hidden>사진을 여기에 끌어다 놓거나 <button id="pick">파일 선택</button> (여러 장 가능)
+        <input id="files" type="file" accept="image/*" multiple hidden></div>
+      <div class="row">
+        <select id="camSel"></select>
+        <button id="usbBtn" hidden>보드 연결</button>
+        <label id="mirrorWrap">회전 <select id="rot"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+      </div>
+      <div id="status">모델 불러오는 중…</div>
+      <div class="note">모델이 보는 화면 (중앙 정사각형으로 잘라 96×96 으로 줄인 것) + 검출 위치:</div>
+      <canvas id="view" width="384" height="384" style="width:100%;max-width:384px;border:1px solid var(--line);border-radius:8px"></canvas>
+      <canvas id="model" width="96" height="96" hidden></canvas>
+    </section>
+
+    <section class="card">
+      <div id="verdict">—</div>
+      <div id="why" class="note"></div>
+      <div id="bars" style="margin-top:8px"></div>
+      <div class="note" id="ms"></div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <div><b>정답 기록</b> — 지금 보이는 물체의 실제 종류를 누르면 맞았는지 집계합니다.</div>
+      <div class="row" id="truthBtns"></div>
+      <div style="margin-top:8px"><table id="cm"></table></div>
+      <div class="row"><span id="acc" class="note"></span><button id="reset">기록 지우기</button><button id="csv">CSV 복사</button></div>
+      <div class="note">판정: 확신도 0.60 이상 검출 중 가장 높은 것. 검출이 없으면 ‘empty’(빈 트레이)로 기록합니다. 보드용 판정 규칙(연속 3번 등)은 아직 적용하지 않았습니다.</div>
+    </section>
+  </div>
+</main>
+
+<script src="model-wasm.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const SIZE = 96, VIEW = 384, MINSCORE = 0.60;
+const NAMES = ['can', 'general_trash', 'paper', 'pet'];
+const COLORS = { can: '#2563eb', general_trash: '#a855f7', paper: '#16a34a', pet: '#ea580c' };
+let classifier = null, labels = [], mode = 'webcam', busy = false, current = null;
+const log = JSON.parse((() => { try { return localStorage.getItem('tester-log-det') } catch { return null } })() || '[]');
+const saveLog = () => { try { localStorage.setItem('tester-log-det', JSON.stringify(log)); } catch {} };
+const setStatus = t => $('status').textContent = t;
+
+// ---- 모델 로드: gzip+base64 로 내장된 wasm 을 풀어서 Emscripten 모듈에 직접 넘긴다 (fetch 없음 → file:// 에서도 동작)
+async function loadModel() {
+  if (!window.MODEL_WASM_GZ_B64) throw new Error('model-wasm.js 가 없습니다');
+  const gz = Uint8Array.from(atob(MODEL_WASM_GZ_B64), c => c.charCodeAt(0));
+  const wasm = new Uint8Array(await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  window.Module = { wasmBinary: wasm };
+  for (const src of ['edge-impulse-standalone.js', 'run-impulse.js'])
+    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src + ' 로드 실패')); document.head.appendChild(s); });
+  classifier = new EdgeImpulseClassifier();
+  await classifier.init();
+  const p = classifier.getProjectInfo();
+  const props = classifier.getProperties();
+  labels = NAMES.concat(['empty']);
+  $('modelWarn').textContent = ` 모델: ${p.name} v${p.deploy_version}, 클래스 ${labels.join('/')}`;
+}
+
+// ---- 전처리: 학습 때와 같게 중앙 정사각형 크롭 → 96×96
+const mc = $('model'), mx = mc.getContext('2d', { willReadFrequently: true });
+const vc = $('view'), vx = vc.getContext('2d');
+function toFeatures(src, sw, sh) {
+  const rot = +$('rot').value;
+  mx.save(); mx.clearRect(0, 0, SIZE, SIZE);
+  mx.translate(SIZE / 2, SIZE / 2); mx.rotate(rot * Math.PI / 180);
+  const side = Math.min(sw, sh), sx = (sw - side) / 2, sy = (sh - side) / 2;
+  mx.drawImage(src, sx, sy, side, side, -SIZE / 2, -SIZE / 2, SIZE, SIZE);
+  mx.restore();
+  vx.save(); vx.clearRect(0, 0, VIEW, VIEW);
+  vx.translate(VIEW / 2, VIEW / 2); vx.rotate(rot * Math.PI / 180);
+  vx.drawImage(src, sx, sy, side, side, -VIEW / 2, -VIEW / 2, VIEW, VIEW);
+  vx.restore();
+  const d = mx.getImageData(0, 0, SIZE, SIZE).data, f = new Array(SIZE * SIZE);
+  for (let i = 0; i < f.length; i++) f[i] = (d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2];
+  return f;
+}
+
+function show(res, ms) {
+  const k = VIEW / SIZE;
+  const dets = res.results.filter(x => x.value >= MINSCORE).sort((a, b) => b.value - a.value);
+  vx.lineWidth = 3; vx.font = 'bold 14px sans-serif';
+  for (const d of dets) {
+    const c = COLORS[d.label] || '#fff';
+    vx.strokeStyle = c; vx.strokeRect(d.x * k, d.y * k, d.width * k, d.height * k);
+    vx.fillStyle = c; vx.fillText(`${d.label} ${(d.value * 100).toFixed(0)}%`, d.x * k + 2, Math.max(14, d.y * k - 4));
+  }
+  const top = dets[0];
+  const counts = {}; dets.forEach(d => counts[d.label] = (counts[d.label] || 0) + 1);
+  $('verdict').innerHTML = top ? `${top.label} <small>${(top.value * 100).toFixed(0)}%</small>` : `물체 없음 <small>(빈 트레이)</small>`;
+  $('why').textContent = top ? '' : `확신도 ${MINSCORE} 이상인 검출이 없음`;
+  $('bars').innerHTML = dets.length
+    ? `<div class="note">검출된 칸 ${dets.length}개 (한 물체가 여러 칸으로 잡힐 수 있음): ` + Object.entries(counts).map(([l, n]) => `${l} ${n}`).join(', ') + '</div>' +
+      dets.slice(0, 8).map((x, i) => `<div class="bar ${i === 0 ? 'top' : ''}"><b>${x.label}</b><div class="t"><i style="width:${x.value * 100}%"></i></div><span>${(x.value * 100).toFixed(1)}%</span></div>`).join('')
+    : '<div class="note">검출 없음</div>';
+  $('ms').textContent = `추론 ${ms.toFixed(0)} ms (브라우저 기준, 보드 속도 아님)`;
+  current = { pred: top ? top.label : 'empty', decided: true };
+}
+
+function classify(src, sw, sh) {
+  if (!classifier || !sw) return;
+  const t = performance.now();
+  const res = classifier.classify(toFeatures(src, sw, sh));
+  show(res, performance.now() - t);
+}
+
+// ---- 입력: 웹캠
+const video = $('video'), img = $('img');
+async function startWebcam() {
+  try {
+    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    const id = $('camSel').value;
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: id ? { deviceId: { exact: id } } : true, audio: false });
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    $('camSel').innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || '카메라 ' + (i + 1)}</option>`).join('');
+    if (id) $('camSel').value = id;
+    setStatus('웹캠 연결됨');
+  } catch (e) { setStatus('웹캠 실패: ' + e.message); }
+}
+$('camSel').onchange = startWebcam;
+
+// ---- 입력: ESP32 USB (Web Serial). 'C' 를 보내면 [AA 55 AA 55][길이 u32 LE][JPEG] 한 장이 온다 (IF-01)
+let port = null, writer = null, reader = null, usbRun = false, rx = new Uint8Array(0), waiter = null;
+function findMagic(b) { for (let i = 0; i + 4 <= b.length; i++) if (b[i] === 0xAA && b[i + 1] === 0x55 && b[i + 2] === 0xAA && b[i + 3] === 0x55) return i; return -1; }
+function parseRx() {
+  for (;;) {
+    const i = findMagic(rx);
+    if (i < 0) { rx = rx.slice(Math.max(0, rx.length - 3)); return; }
+    if (i > 0) rx = rx.slice(i);
+    if (rx.length < 8) return;
+    const len = new DataView(rx.buffer, rx.byteOffset).getUint32(4, true);
+    if (len > 1000000) { rx = rx.slice(1); continue; }
+    if (rx.length < 8 + len) return;
+    const f = rx.slice(8, 8 + len); rx = rx.slice(8 + len);
+    if (waiter) { const w = waiter; waiter = null; w(f); }
+  }
+}
+async function readLoop(r) {
+  try { for (;;) { const { value, done } = await r.read(); if (done) break; const n = new Uint8Array(rx.length + value.length); n.set(rx); n.set(value, rx.length); rx = n; parseRx(); } }
+  catch {} finally { try { r.releaseLock(); } catch {} }
+}
+const requestFrame = () => new Promise(res => {
+  const t = setTimeout(() => { if (waiter === done) waiter = null; res(null); }, 2000);
+  const done = f => { clearTimeout(t); res(f); };
+  waiter = done;
+  writer.write(new Uint8Array([67])).catch(() => { clearTimeout(t); waiter = null; res(null); });
+});
+async function usbPump() {
+  usbRun = true; let fails = 0;
+  while (usbRun) {
+    const f = await requestFrame();
+    if (!usbRun) break;
+    if (!f) { if (++fails > 2) setStatus('보드 응답 없음 (케이블 / 다른 프로그램의 COM 점유 확인)'); await new Promise(r => setTimeout(r, 500)); continue; }
+    fails = 0;
+    try {
+      const bmp = await createImageBitmap(new Blob([f], { type: 'image/jpeg' }));
+      const u = URL.createObjectURL(new Blob([f], { type: 'image/jpeg' }));
+      const old = img.src; img.src = u; if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+      classify(bmp, bmp.width, bmp.height); bmp.close();
+      setStatus('ESP32 USB 연결됨');
+    } catch { setStatus('프레임은 받았지만 이미지 해석 실패'); }
+    await new Promise(r => setTimeout(r, 30));
+  }
+}
+async function usbStop() {
+  usbRun = false;
+  try { if (reader) await reader.cancel(); } catch {}
+  try { if (writer) writer.releaseLock(); } catch {}
+  try { if (port) await port.close(); } catch {}
+  port = writer = reader = null;
+}
+$('usbBtn').onclick = async () => {
+  if (!navigator.serial) return setStatus('이 브라우저는 USB 연결 미지원 (Chrome/Edge 사용)');
+  try {
+    await usbStop();
+    port = await navigator.serial.requestPort(); await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter(); reader = port.readable.getReader(); rx = new Uint8Array(0);
+    readLoop(reader); setStatus('연결 중…'); usbPump();
+  } catch (e) { setStatus('USB 연결 실패: ' + e.message); }
+};
+
+// ---- 입력: 사진 파일
+async function classifyFile(file) {
+  const bmp = await createImageBitmap(file);
+  const old = img.src; img.src = URL.createObjectURL(file); if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+  classify(bmp, bmp.width, bmp.height); bmp.close();
+  setStatus(file.name);
+}
+async function classifyFiles(list) { for (const f of list) { await classifyFile(f); await new Promise(r => setTimeout(r, 400)); } }
+$('pick').onclick = () => $('files').click();
+$('files').onchange = e => classifyFiles([...e.target.files]);
+const drop = $('drop');
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); classifyFiles([...e.dataTransfer.files].filter(f => f.type.startsWith('image/'))); };
+
+// ---- 모드 전환
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  if (m !== 'usb') usbStop();
+  if (m !== 'webcam' && video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  video.hidden = m !== 'webcam'; img.hidden = m === 'webcam';
+  $('camSel').hidden = m !== 'webcam'; $('usbBtn').hidden = m !== 'usb'; drop.hidden = m !== 'file';
+  if (m === 'webcam') startWebcam(); else setStatus(m === 'usb' ? '‘보드 연결’ 을 누르세요 (collector 와 동시에 못 씀)' : '사진을 올리세요');
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+setInterval(() => { if (mode === 'webcam' && video.videoWidth && !busy) { busy = true; try { classify(video, video.videoWidth, video.videoHeight); } finally { busy = false; } } }, 250);
+
+// ---- 정답 기록 / 혼동행렬
+function renderLog() {
+  const L = labels, m = {};
+  L.forEach(a => { m[a] = {}; L.concat(['보류']).forEach(b => m[a][b] = 0); });
+  let good = 0;
+  log.forEach(e => { if (m[e.truth]) { m[e.truth][e.decided ? e.pred : '보류']++; if (e.decided && e.pred === e.truth) good++; } });
+  $('cm').innerHTML = '<tr><th>정답＼예측</th>' + L.concat(['보류']).map(c => `<th>${c}</th>`).join('') + '</tr>' +
+    L.map(a => `<tr><th>${a}</th>` + L.concat(['보류']).map(b => `<td class="${a === b ? 'd' : ''}">${m[a][b]}</td>`).join('') + '</tr>').join('');
+  $('acc').textContent = log.length ? `정확도 ${good}/${log.length} (${(good / log.length * 100).toFixed(0)}%) — ` : '기록 없음';
+}
+function buildTruthBtns() {
+  $('truthBtns').innerHTML = labels.map(l => `<button data-l="${l}">${l}</button>`).join('');
+  $('truthBtns').querySelectorAll('button').forEach(b => b.onclick = () => {
+    if (!current) return;
+    log.push({ truth: b.dataset.l, pred: current.pred, decided: current.decided }); saveLog(); renderLog();
+  });
+}
+$('reset').onclick = () => { log.length = 0; saveLog(); renderLog(); };
+$('csv').onclick = async () => {
+  const t = 'truth,pred,decided\n' + log.map(e => `${e.truth},${e.pred},${e.decided}`).join('\n');
+  try { await navigator.clipboard.writeText(t); setStatus('CSV 를 복사했습니다'); } catch { setStatus('복사 실패'); }
+};
+
+(async () => {
+  try {
+    await loadModel();
+    buildTruthBtns(); renderLog(); setMode('webcam');
+  } catch (e) { setStatus('모델 로드 실패: ' + e.message); }
+})();
+</script>
+</body>
+</html>

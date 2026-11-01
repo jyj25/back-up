@@ -13,9 +13,11 @@ LIMIT=${LIMIT:-120}
 M=localhost:8000
 
 # 이 셸이 아니라 uvicorn 프로세스만 끈다 (pkill -f "uvicorn server.main" 은 이 명령을 실행한 셸도 잡는다)
-pkill -f "^$HOME/raspbot-venv/bin/python.*uvicorn" ; sleep 1
-BOARD_PORT=${BOARD_PORT:-none} HISTORY_FILE=${HISTORY_FILE:-none} \
-  nohup "$HOME/raspbot-venv/bin/uvicorn" server.main:app --host 0.0.0.0 --port 8000 > /tmp/robot.log 2>&1 &
+# 영상을 보는 브라우저가 있으면 정상 종료가 끝나지 않으므로 2초 뒤 강제로
+pkill -f "^$HOME/raspbot-venv/bin/python.*uvicorn" ; sleep 2
+pkill -9 -f "^$HOME/raspbot-venv/bin/python.*uvicorn" ; sleep 0.5
+BOARD_PORT=${BOARD_PORT:-none} HISTORY_FILE=${HISTORY_FILE:-none} CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8765,http://127.0.0.1:8765} \
+  nohup "$HOME/raspbot-venv/bin/uvicorn" server.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 2 > /tmp/robot.log 2>&1 &
 for _ in $(seq 1 40); do curl -s $M/api/status >/dev/null && break; sleep 0.5; done
 
 show='import sys,json;d=json.load(sys.stdin);print(", ".join("#%d(x=%+.2f,size=%.3f)"%(m["id"],m["cx"],m["size"]) for m in d.get("markers") or d.get("seen") or []) or "-")'

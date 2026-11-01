@@ -27,7 +27,7 @@ User=$USER
 WorkingDirectory=$ROBOT_DIR
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-$ROBOT_DIR/robot.env
-ExecStart=$VENV/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000
+ExecStart=$VENV/bin/uvicorn server.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 2
 Restart=on-failure
 RestartSec=3
 

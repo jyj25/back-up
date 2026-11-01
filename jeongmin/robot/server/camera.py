@@ -5,6 +5,7 @@ CAMERA=picamera|usb|none 으로 고를 수 있다. USB 웹캠 번호는 CAMERA_I
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 
@@ -42,7 +43,15 @@ class Camera:
         try:
             import cv2
 
-            cap = cv2.VideoCapture(index)
+            # 리눅스는 V4L2 로 바로 연다 (기본값은 다른 방식부터 시도하다 실패하기도 함).
+            # 서버를 껐다 바로 켜면 이전 프로세스가 카메라를 아직 쥐고 있을 수 있어 몇 번 다시 시도
+            backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
+            for _ in range(5):
+                cap = cv2.VideoCapture(index, backend)
+                if cap.isOpened():
+                    break
+                cap.release()
+                time.sleep(0.5)
             if cap.isOpened():
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)

@@ -43,6 +43,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .board import BoardReader
+from .board_cam import BoardCamera
 from .camera import Camera
 from .drivers import IR_POWER, LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
@@ -88,6 +89,8 @@ class Robot:
         self.sorter = Sorter(self, STATIONS, MIN_CONFIDENCE, auto=os.environ.get("AUTO_SORT") == "1",
                              history_file=None if history.lower() == "none" else Path(history))
         self.board = BoardReader(_setting("BOARD_PORT", "auto", fake), self._on_board_line)
+        # 판정을 안 읽을 때(BOARD_PORT=none)만 보드 카메라 사진을 USB 로 받아 본다 (사진 수집용 펌웨어일 때)
+        self.board_cam = None if fake or self.board.enabled else BoardCamera(os.environ.get("BOARD_CAM_PORT", "auto"))
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
@@ -143,6 +146,8 @@ class Robot:
             self._watchdog.cancel()
         self.driver.close()
         self.camera.close()
+        if self.board_cam:
+            self.board_cam.close()
 
 
 robot: Robot | None = None
@@ -331,6 +336,25 @@ def stream():
     if robot.camera.kind == "none":
         raise HTTPException(status_code=503, detail="카메라가 없습니다")
     return StreamingResponse(robot.camera.frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+def _board_cam():
+    if robot.board_cam is None:
+        raise HTTPException(status_code=503, detail="보드 카메라를 쓰지 않습니다 (판정 읽기 중이거나 가짜 모드). BOARD_PORT=none 으로 켜면 사진 수집용 펌웨어의 사진을 볼 수 있습니다")
+    return robot.board_cam
+
+
+@app.get("/api/board/camera.jpg")
+def board_camera_jpg():
+    data = _board_cam().jpeg()
+    if data is None:
+        raise HTTPException(status_code=503, detail="보드에서 사진이 오지 않습니다 (연결·펌웨어 확인)")
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/board/stream")
+def board_stream():
+    return StreamingResponse(_board_cam().frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

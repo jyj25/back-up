@@ -106,3 +106,10 @@ def test_real_driver_remote_decoding():
     d._ir_prev = 255
     got = [d.remote_key() for _ in range(9)]
     assert [k for k in got if k is not None] == [5, IR_POWER, 18]
+
+
+def test_board_camera_off_in_fake_mode_and_cams_page():
+    with client() as c:
+        assert c.get("/api/board/camera.jpg").status_code == 503
+        r = c.get("/cams.html")
+        assert r.status_code == 200 and "/api/board/stream" in r.text

@@ -6,6 +6,8 @@
   Mission   : decide() 를 반복해서 실제로 움직이는 백그라운드 작업
 
 한 걸음 판단
+  목표는 안 보이지만 마커처럼 생긴 네모가 보임 (멀어서 번호를 못 읽음)
+                             → closer   : 그 네모들 가운데 쪽으로 돌고 앞으로 (가까워지면 번호가 읽힌다)
   목표 마커가 안 보임        → look     : 몸은 두고 카메라만 좌우로 돌려 찾아본다 (찾으면 그쪽으로 회전)
                                search   : 그래도 없으면 마지막으로 본 쪽으로 제자리 회전 (가끔 다시 둘러봄)
   가운데에서 벗어남          → align    : 그쪽으로 조금 회전 (많이 벗어날수록 길게)
@@ -21,7 +23,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field, fields
 
-from .vision import Marker
+from .vision import CANDIDATE, Marker
 
 
 @dataclass
@@ -62,7 +64,14 @@ class Step:
 def decide(markers: list[Marker], target: int, cm: float, cfg: NavConfig, last_cx: float = 0.0) -> Step:
     m = next((m for m in markers if m.id == target), None)
     if m is None:
-        return Step("search", "turn_right" if last_cx > 0 else "turn_left", cfg.turn_speed, cfg.pulse_ms)
+        far = [x for x in markers if x.id == CANDIDATE]
+        if not far:
+            return Step("search", "turn_right" if last_cx > 0 else "turn_left", cfg.turn_speed, cfg.pulse_ms)
+        cx = sum(x.cx for x in far) / len(far)  # 어느 게 목표인지 모르니 무리의 가운데로
+        if abs(cx) > cfg.center_tol:
+            ms = max(60, int(cfg.pulse_ms * min(1.0, abs(cx))))
+            return Step("closer", "turn_right" if cx > 0 else "turn_left", cfg.turn_speed, ms)
+        return Step("closer", "forward", cfg.speed, cfg.pulse_ms)
     centered = abs(m.cx) <= cfg.center_tol
     if m.size >= cfg.arrive_size or (centered and 0 < cm <= cfg.arrive_cm):
         return Step("arrived")
@@ -231,8 +240,9 @@ class Mission:
                     raise NavError(f"{info['label']} 마커 {info['marker']} 번을 못 찾았습니다")
             else:
                 searched = 0
-                m = next(m for m in self.seen if m.id == info["marker"])
-                last_cx, last_size = m.cx, m.size
+                m = next((m for m in self.seen if m.id == info["marker"]), None)
+                if m is not None:  # closer 단계에서는 목표 번호가 아직 안 읽힌다
+                    last_cx, last_size = m.cx, m.size
             # 서버 자동 정지는 여유 있게, 실제 정지는 여기서 직접
             self.robot.move(step.action, step.speed, step.ms + 300)
             if self.robot.blocked:

@@ -47,7 +47,7 @@ from .camera import Camera
 from .drivers import IR_POWER, LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
 from .sorter import Sorter, parse_line
-from .vision import MARKER_DICT, CameraVision, NoVision, SimVision
+from .vision import MARKER_DICT, CameraVision, NoVision, SimVision, decoded
 
 MAX_SPEED = int(os.environ.get("MAX_SPEED", "150"))
 OBSTACLE_CM = float(os.environ.get("OBSTACLE_CM", "15"))
@@ -261,7 +261,7 @@ def stations():
 async def markers():
     """지금 카메라에 보이는 마커 (가짜 모드면 가짜 세계의 위치도)"""
     seen = await asyncio.to_thread(robot.vision.markers)
-    out = {"markers": [m.to_dict() for m in seen]}
+    out = {"markers": [m.to_dict() for m in decoded(seen)]}
     if robot.driver.mode == "fake":
         out["pose"] = robot.driver.world.pose()
     return out
@@ -279,7 +279,7 @@ async def mission_start(body: MissionIn):
 def mission_state():
     cur = robot.sorter.current or {}
     return {**robot.mission.state, "running": robot.mission.running,
-            "seen": [m.to_dict() for m in robot.mission.seen],
+            "seen": [m.to_dict() for m in decoded(robot.mission.seen)],
             "label": cur.get("label"), "confidence": cur.get("confidence"), "by": cur.get("by")}
 
 

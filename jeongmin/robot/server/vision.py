@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 MARKER_DICT = "DICT_4X4_50"  # 기본값: 4x4 칸, 0~49번
+CANDIDATE = -1               # 멀어서 번호는 못 읽었지만 마커처럼 생긴 네모 (id 대신)
 
 
 @dataclass
@@ -40,17 +41,25 @@ def detect(frame, detector=None) -> list[Marker]:
 
     detector = detector or make_detector()
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
-    corners, ids, _ = detector.detectMarkers(gray)
-    if ids is None:
-        return []
+    corners, ids, rejected = detector.detectMarkers(gray)
     w = gray.shape[1]
     found = []
-    for c, i in zip(corners, ids.flatten()):
+    for c, i in zip(corners, ids.flatten() if ids is not None else []):
         pts = c.reshape(4, 2)
         xs = pts[:, 0]
         width = max(xs) - min(xs)
         found.append(Marker(int(i), round(float(xs.mean() / w * 2 - 1), 3), round(float(width / w), 3)))
+    for c in rejected:  # 번호를 못 읽은 후보: 정사각형에 가깝고 너무 작지 않은 것만
+        pts = c.reshape(4, 2)
+        bw, bh = pts[:, 0].max() - pts[:, 0].min(), pts[:, 1].max() - pts[:, 1].min()
+        if bw >= 10 and 0.7 <= bw / max(bh, 1) <= 1.4:
+            found.append(Marker(CANDIDATE, round(float(pts[:, 0].mean() / w * 2 - 1), 3), round(float(bw / w), 3)))
     return sorted(found, key=lambda m: -m.size)
+
+
+def decoded(markers: list[Marker]) -> list[Marker]:
+    """번호를 읽은 마커만 (화면·API 용)"""
+    return [m for m in markers if m.id != CANDIDATE]
 
 
 class CameraVision:

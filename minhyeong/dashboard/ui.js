@@ -199,7 +199,7 @@ const UI = (() => {
         <div class="${card} p-4"><p class="text-xs text-[var(--mute)]">시간대별 처리량</p>
           <div class="hr mt-3 h-36 flex items-end gap-1.5"></div><div class="hl mt-1 flex gap-1.5 text-[10px] text-[var(--mute)]"></div></div>
       </div>
-      <p class="mt-3 text-xs text-[var(--mute)]"><iconify-icon icon="solar:leaf-linear" class="align-[-2px]"></iconify-icon> 탄소 절감량 <b class="text-[var(--ink)]">— kg</b> · 계수 출처를 확인한 뒤 표시합니다</p>`;
+      `;
     return s => {
       const st = s.stats, tries = st.done + st.failed;
       const kpi = [

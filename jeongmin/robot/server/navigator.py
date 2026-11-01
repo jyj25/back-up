@@ -42,6 +42,8 @@ class NavConfig:
     scan_step_ms: int = 350   # 한 바퀴 둘러볼 때 한 번에 도는 시간
     half_fov_deg: float = 30  # 카메라 시야의 반 (cx ±1 이 ±이만큼의 각도)
     visit_steps: int = 14     # 미확인 블록 하나에 다가가며 확인하는 최대 걸음
+    look_frames: int = 3      # 한 번 볼 때 합쳐 볼 사진 수
+    look_gap_ms: int = 80     # 그 사진 사이 간격
     lost_near: float = 0.6    # 마커가 arrive_size 의 이만큼 이상 컸다가 사라지면 도착 (가까워져 화면 아래로 빠짐)
     dump_side: str | None = None  # 트레이가 쏟는 쪽 "left" / "right" (None 이면 정면으로 멈춘 채 쏟음)
     dock_size: float = 0.35   # 옆걸음으로 다가갈 때 마커가 이만큼 크면 멈춤
@@ -197,6 +199,21 @@ class Mission:
         ms = int(abs(diff) * max(1, cfg.turn90_ms - cfg.turn_dead_ms) / 90 + cfg.turn_dead_ms)
         await self._pulse("turn_left" if diff > 0 else "turn_right", cfg.turn_speed, ms)
 
+    async def _look(self) -> list[Marker]:
+        """사진 몇 장을 보고 합친다. 같은 번호는 가장 크게 보인 것 하나, 후보 네모는 전부."""
+        found: dict[int, Marker] = {}
+        cands: list[Marker] = []
+        for k in range(self.cfg.look_frames):
+            if k:
+                await self.sleep(self.cfg.look_gap_ms / 1000)
+            for m in await asyncio.to_thread(self.robot.vision.markers):
+                if m.id == CANDIDATE:
+                    cands.append(m)
+                elif m.id not in found or m.size > found[m.id].size:
+                    found[m.id] = m
+        self.seen = sorted(list(found.values()) + cands, key=lambda m: -m.size)
+        return self.seen
+
     def _bearing(self, m: Marker) -> float:
         return self.heading - m.cx * self.cfg.half_fov_deg  # cx + = 화면 오른쪽 = 방향 −
 
@@ -206,7 +223,7 @@ class Mission:
         self._set("scan", f"{info['label']} (마커 {target}) 한 바퀴 둘러보는 중")
         start, sightings = self.heading, []
         while True:
-            self.seen = await asyncio.to_thread(self.robot.vision.markers)
+            await self._look()
             for m in self.seen:
                 sightings.append({"id": m.id, "bearing": self._bearing(m), "size": m.size})
             if any(m.id == target for m in self.seen) or abs(self.heading - start) >= 360:
@@ -240,7 +257,7 @@ class Mission:
         forward = 0
         try:
             for _ in range(cfg.visit_steps):
-                self.seen = await asyncio.to_thread(self.robot.vision.markers)
+                await self._look()
                 if any(m.id == target for m in self.seen):
                     return True
                 ahead = [m for m in self.seen if abs(m.cx) < 0.5]
@@ -270,7 +287,7 @@ class Mission:
         # 2) 옆 화면에 마커가 보이면 가운데로 보정. 몸과 카메라가 같이 돌므로 판단은 정면과 같다
         m = None
         for _ in range(cfg.dock_steps):
-            self.seen = await asyncio.to_thread(self.robot.vision.markers)
+            await self._look()
             m = next((m for m in self.seen if m.id == target), None)
             if m is None or abs(m.cx) <= cfg.center_tol:
                 break
@@ -281,7 +298,7 @@ class Mission:
         while m is not None and m.size < cfg.dock_size and steps < cfg.dock_steps:
             await self._pulse(toward, cfg.speed, cfg.pulse_ms)
             steps += 1
-            self.seen = await asyncio.to_thread(self.robot.vision.markers)
+            await self._look()
             m = next((m for m in self.seen if m.id == target), None)
         return steps
 
@@ -293,7 +310,7 @@ class Mission:
             for pan in self.cfg.look_angles:
                 await asyncio.to_thread(self.robot.driver.set_servo, pan, None)
                 await self.sleep(self.cfg.look_settle_ms / 1000)
-                self.seen = await asyncio.to_thread(self.robot.vision.markers)
+                await self._look()
                 if any(m.id == info["marker"] for m in self.seen):
                     found = -1.0 if pan > 90 else 1.0  # 각도가 크면 왼쪽을 보고 있다
                     break
@@ -306,9 +323,9 @@ class Mission:
         cfg, info = self.cfg, self.stations[name]
         target = info["marker"]
         self.state["target"] = name
-        last_size, looked, sightings, done = 0.0, False, None, []
+        last_size, looked, sightings, done, went_back = 0.0, False, None, [], False
         for _ in range(cfg.step_limit):
-            self.seen = await asyncio.to_thread(self.robot.vision.markers)
+            await self._look()
             self.state["steps"] += 1
             m = next((m for m in self.seen if m.id == target), None)
             if m is None:
@@ -326,6 +343,11 @@ class Mission:
                     continue
                 if sightings is None:  # 2) 몸으로 한 바퀴만
                     sightings = await self._scan(info)
+                    continue
+                seen_target = [x for x in sightings if x["id"] == target]
+                if seen_target and not went_back:  # 한 바퀴 중에 목표를 봤으면 그 방향으로
+                    went_back = True
+                    await self._turn_to(max(seen_target, key=lambda x: x["size"])["bearing"])
                     continue
                 todo = self._unknowns(sightings, target, done)  # 3) 미확인 블록 하나씩
                 if not todo:

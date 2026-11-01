@@ -338,8 +338,10 @@ const UI = (() => {
           <label class="sm:col-span-2 flex items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2.5 cursor-pointer"><input type="checkbox" class="at accent-[var(--accent)] w-4 h-4 disabled:opacity-40">
             <span><b class="text-sm">AI 자동 출발</b><br><span class="text-[var(--mute)]">켜면 분류 보드 판정(확신도 기준 이상)이 오자마자 로봇이 출발합니다. 로봇 서버 기본은 꺼짐 (POST /api/sort)</span></span></label>
           <label class="flex flex-col gap-1">통 가득 참 기준(개)<input name="capacity" type="number" min="1" max="50" class="cp rounded-lg border border-[var(--line)] bg-transparent px-2.5 py-2 text-sm disabled:opacity-40"><span class="text-[10px] text-[var(--mute)]">1~50, 팀 결정 전 가정 값</span></label>
-          <div class="flex flex-col gap-1">연결한 로봇 서버<code class="rounded-lg border border-[var(--line)] px-2.5 py-2 text-sm break-all">${live ? S.state.base : '가짜 로봇 (브라우저 안)'}</code>
-            <span class="text-[10px] text-[var(--mute)]">바꾸려면 주소 뒤에 ?robot=http://로봇IP:8000 · 로봇 서버 CORS_ORIGINS 에 ${location.origin} 등록 필요</span></div>
+          <form class="rf flex flex-col gap-1">로봇 서버 연결 <span class="text-[10px] text-[var(--mute)]">지금: ${live ? S.state.base : '가짜 로봇 (로봇 없이 연습)'}</span>
+            <span class="flex gap-2"><input name="robot" inputmode="url" placeholder="로봇 IP 예) 192.168.0.23" value="${live ? S.state.base.replace(/^http:\/\//, '').replace(/:8000$/, '') : ''}" class="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-transparent px-2.5 py-2 text-sm">
+              <button class="rounded-lg bg-[var(--accent)] text-white px-3.5 text-sm font-bold">연결</button></span>
+            <span class="text-[10px] text-[var(--mute)]">비우고 연결 = 가짜 로봇 · 로봇과 같은 핫스팟, 로봇 서버 CORS_ORIGINS 에 ${location.origin} 등록 필요</span></form>
         </div>
         <p class="smsg mt-2 text-xs min-h-[1rem]" aria-live="polite"></p>
         <div class="bn mt-1 flex flex-wrap gap-2"></div>
@@ -357,6 +359,13 @@ const UI = (() => {
     const say = (r, sel = '.msg') => { const m = $(el, sel); m.textContent = r.reason; m.style.color = r.ok ? 'var(--ink)' : 'var(--danger)'; };
     el.querySelectorAll('[data-send]').forEach(b => hold(b, 1000, async () => say(await S.send(b.dataset.send))));
     $(el, '.cn').onclick = async () => say(await S.stop('cancel'));
+    $(el, '.rf').onsubmit = e => {               // IP 만 넣어도 되게: 192.168.0.23 → http://192.168.0.23:8000
+      e.preventDefault();
+      let v = e.target.robot.value.trim().replace(/\/$/, '');
+      if (v && !/^https?:\/\//.test(v)) v = 'http://' + v;
+      if (v && !/:\d+$/.test(v)) v += ':8000';
+      location.search = v ? '?robot=' + v : '';
+    };
     $(el, '.ad').onchange = e => S.setAdmin(e.target.checked);
     $(el, '.at').onchange = async e => { const r = await S.setAuto(e.target.checked); say(r, '.smsg'); if (!r.ok) e.target.checked = !e.target.checked; };
     $(el, '.cp').value = S.settings.capacity;

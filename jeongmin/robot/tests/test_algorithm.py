@@ -1,5 +1,6 @@
 """정리한 알고리즘 시험: 샤오 판정 → 라벨 번호 블록 찾기 → 앞에서 왼쪽 90° → 쏟고 끝."""
 import asyncio
+import dataclasses
 import os
 
 os.environ["ROBOT_MODE"] = "fake"
@@ -25,6 +26,7 @@ class VirtualClock:
 def _robot():
     robot = main.Robot()
     robot.mission.sleep = VirtualClock().sleep
+    robot.mission.cfg = dataclasses.replace(robot.mission.cfg)  # 시험끼리 설정이 새지 않게 복사본
     return robot
 
 

@@ -52,7 +52,7 @@ def detect(frame, detector=None) -> list[Marker]:
     for c in rejected:  # 번호를 못 읽은 후보: 정사각형에 가깝고 너무 작지 않은 것만
         pts = c.reshape(4, 2)
         bw, bh = pts[:, 0].max() - pts[:, 0].min(), pts[:, 1].max() - pts[:, 1].min()
-        if bw >= 10 and 0.7 <= bw / max(bh, 1) <= 1.4:
+        if bw >= max(10, 0.01 * w) and 0.7 <= bw / max(bh, 1) <= 1.4:
             found.append(Marker(CANDIDATE, round(float(pts[:, 0].mean() / w * 2 - 1), 3), round(float(bw / w), 3)))
     return sorted(found, key=lambda m: -m.size)
 

@@ -47,6 +47,7 @@ class Sorter:
         self.last_decision: dict | None = None  # 마지막 확정 판정 (프레임이 last_verdict 를 덮어써도 남는다)
         self._decided: tuple | None = None  # 샤오가 확정한 (라벨, 확신도, 시각). 빈 트레이가 보이면 지운다
         self._empty = False                 # 가장 최근 프레임이 빈 트레이였나
+        self._top: tuple | None = None      # 가장 최근 프레임에서 퍼센트가 제일 높은 (라벨, 확신도, 시각)
         self._last_frame: tuple | None = None  # (찍은 시각 monotonic, 빈 트레이였나)
         self.current: dict | None = None  # 지금 임무의 {label, confidence, by}
         self.items: list[dict] = []
@@ -82,6 +83,11 @@ class Sorter:
         except (TypeError, ValueError):
             took = 0.0
         self._last_frame = (time.monotonic() - took, is_empty)
+        top = obj.get("top")
+        if is_empty:
+            self._top = None
+        elif isinstance(top, dict) and top.get("class") in self.bins:
+            self._top = (top["class"], float(top.get("conf", 0)), time.monotonic())
         if label == "empty" or (label is None and obj.get("n") == 0):
             self._decided, self._empty = None, True
         elif label in self.bins and obj.get("event", "decision") == "decision":
@@ -105,6 +111,13 @@ class Sorter:
         """READY 버튼: 샤오가 트레이 위 물건을 보고 정한 라벨의 통(마커)으로 보낸다. {ok, reason, status}"""
         if self.robot.mission.running:
             return {"ok": False, "status": 409, "reason": "이미 임무 중입니다"}
+        t = self._top
+        if t is not None and time.monotonic() - t[2] <= 3.0:  # 확정을 기다리지 않고, 지금 퍼센트가 제일 높은 종류로 간다
+            label, conf, _ = t
+            self.start(label, by="ai", confidence=conf,
+                       return_home=not getattr(self.robot.mission.cfg, "finish_after_dump", False))
+            self._decided = None
+            return {"ok": True, "status": 200, "reason": f"{self.stations[label]['label']} 통으로 출발 (제일 높은 {conf:.0%})"}
         if self._decided is not None:
             label, conf, _ = self._decided
             self.start(label, by="ai", confidence=conf,
@@ -120,11 +133,11 @@ class Sorter:
     def _reject_reason(self, obj: dict) -> str | None:
         if "error" in obj:
             return f"보드 오류: {obj['error']}"
-        if "event" in obj and obj["event"] != "decision":
-            return f"판정 아님 ({obj['event']})"
         label = obj.get("class")
         if label is None and obj.get("n") == 0:
             return EMPTY_MSG
+        if "event" in obj and obj["event"] != "decision":
+            return f"판정 아님 ({obj['event']})"
         if label is None:
             return "판정 없음"
         if label == "empty":

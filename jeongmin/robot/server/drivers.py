@@ -37,6 +37,12 @@ DUMP_REST = int(os.environ.get("DUMP_REST", "0"))     # 평소 (트레이 수평
 DUMP_ANGLE = int(os.environ.get("DUMP_ANGLE", "90"))  # 쏟을 때: 반시계로 90° (OLED 반대쪽)
 DUMP_HOLD_S = 1.5
 PAN_DPS = float(os.environ.get("PAN_DPS", "60"))  # 카메라 좌우 도는 속도 (도/초)
+PAN_FRONT = int(os.environ.get("CAMERA_FRONT_PAN", "90"))  # 카메라가 몸체 정면을 볼 때의 실제 서보 각도 (카메라가 틀어져 달려 있으면 90 이 아니다)
+
+
+def physical_pan(logical: int) -> int:
+    """코드의 pan(90 = 몸체 정면, 클수록 왼쪽)을 서보에 보낼 실제 각도로 바꾼다. 서보 범위 0~180 안으로 자른다."""
+    return max(0, min(180, int(logical) + PAN_FRONT - 90))
 DUMP_SWEEP_S = float(os.environ.get("DUMP_SWEEP_MS", "1000")) / 1000  # 90° 도는 시간 (0.3초도 빨라서 물건이 튐 → 1초)
 IR_POWER = 0
 IR_RELEASE = 255
@@ -123,7 +129,7 @@ class RealDriver(FakeDriver):
         self._bot = Robot()
         self._lock = threading.Lock()  # I2C 는 한 번에 한 명령씩
         self._bot.motors.stop()
-        self._bot.servos.pan.set_angle(90)
+        self._bot.servos.pan.set_angle(physical_pan(90))
         self._bot.servos.tilt.set_angle(DUMP_REST)  # S2 = 쏟기 서보 → 켜질 때 트레이 수평
         self._bot.ultrasonic.enable()
         self._bot.ir.enable()
@@ -146,9 +152,9 @@ class RealDriver(FakeDriver):
         step = 2
         n = max(1, abs(target - cur) // step)
         for i in range(1, n + 1):
-            self._bot.servos.pan.set_angle(round(cur + (target - cur) * i / n))
+            self._bot.servos.pan.set_angle(physical_pan(round(cur + (target - cur) * i / n)))
             time.sleep(step / PAN_DPS)
-        self._bot.servos.pan.set_angle(target)
+        self._bot.servos.pan.set_angle(physical_pan(target))
 
     def set_servo(self, pan: int | None, tilt: int | None) -> None:
         with self._lock:

@@ -55,7 +55,7 @@ def test_gives_up_after_two_fast_retries():
         asyncio.run(m._dump_with_tray("캔"))
     finally:
         robot.close()
-    assert speeds == [1.0, 2.0, 2.0]     # 처음 1번 + 2배속 2번
+    assert speeds == [1.0, 2.0, 4.0]     # 처음 1번, 안 비면 2배 → 또 안 비면 4배
     assert m.state["tray_left"] is True
     assert "비지 않음" in m.state["message"]
 

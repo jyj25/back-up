@@ -36,6 +36,7 @@ class NavConfig:
     settle_ms: int = 150      # 멈추고 화면이 안정될 때까지
     center_tol: float = 0.15  # |cx| 가 이 안이면 가운데
     arrive_size: float = 0.3  # 마커가 화면 너비의 이만큼이면 도착
+    arrive_cx: float = 1.0    # 도착으로 치려면 마커가 이 가로 위치(|cx|) 안이어야 한다 (1.0 이면 위치는 안 봄). 작게 하면 마커를 가운데로 맞춘 뒤에 도착
     arrive_cm: float = 25     # 가운데를 보고 있고 초음파가 이보다 가까우면 도착
     search_steps: int = 40    # (예전 방식) 회전하며 찾는 최대 걸음
     turn_dead_ms: int = 120   # 회전 명령 중 출발하느라 거의 안 도는 시간 (실측: 0.2초에 약 15°)
@@ -57,6 +58,27 @@ class NavConfig:
     backup_ms: int = 600      # 쏟은 뒤 뒤로 빠지는 시간
     finish_after_dump: bool = False  # True 면 쏟고 바로 끝 (뒤로 빠지거나 되돌아 돌지 않고, 출발점 복귀도 안 함)
     rescans: int = 0          # 번호가 맞는 블록을 못 찾으면 처음부터 다시 둘러보는 횟수 (그 블록은 반드시 있을 때)
+    line_mode: bool = False   # True 면 마커를 일렬로 카메라가 볼 수 있게 세워 둔 경우: 몸으로 한 바퀴 돌며 찾지 않는다 (카메라 둘러보기까지만)
+    line_advance_steps: int = 20  # 마커 일렬 모드에서 마커가 안 보일 때 앞으로 전진하며 찾는 최대 걸음 수 (한 걸음 = pulse_ms)
+    side_camera: bool = False  # True 면 카메라가 로봇 오른쪽을 보고 마커 줄이 오른쪽에 있다: 화면의 좌우 = 몸의 앞뒤, 마커까지의 거리 = 오른쪽으로 얼마나 떨어졌나
+    side_step_ms: int = 0     # 옆 카메라 모드에서 한 걸음 움직이는 시간 (0 이면 pulse_ms). 짧게 갈수록 마커를 놓치지 않고 한 번에 하나씩 확인한다
+    side_hold: float = 0.0    # 옆 카메라로 줄을 따라 갈 때 마커 크기가 처음 본 크기에서 이 비율(0.35 = 35%) 넘게 달라지면 옆걸음으로 줄과의 간격을 되돌린다 (0 이면 끔). 길이 휘는 것을 막는다
+    side_hold_max: int = 8    # 그렇게 간격을 되돌리는 최대 횟수
+    pan_look: bool = False    # True 면: 로봇은 일직선으로 전진·후진만 한다 (옆걸음·회전 없음). 한 걸음마다 멈춰 카메라를 오른쪽(scan_pan)으로 돌려 마커를 확인하고, 아니면 카메라를 정면(travel_pan)으로 돌려 다음 걸음
+    travel_pan: int = 135     # 달릴 때 카메라 각도 (정면)
+    pan_step_ms: int = 250    # pan_look 에서 마커를 못 찾았을 때 한 걸음 전진하는 시간
+    pan_back_margin: int = 6  # pan_look 에서 되돌아가며 찾을 때 출발점 뒤로 더 가 보는 걸음 수
+    pan_judge_ms: int = 1500  # 마커가 처음 보이면 이만큼 멈춰서 '트레이와 같은 마커인가' 판단한다 (다른 번호면 그 뒤 전진). 같은 마커는 한 번만
+    pan_center: bool = False  # False 면 목표 마커가 화면 어디든 보이는 순간 멈춰서 바로 쏟는다. True 면 줄 방향으로 가운데에 맞춘 뒤 쏟는다
+    pan_align_ms: int = 150   # 목표 마커가 보일 때 가운데에 맞추려는 한 걸음 시간
+    pan_align_max: int = 14   # 가운데에 맞추는 최대 걸음
+    scan_pan: int = 90        # 임무를 시작할 때 카메라를 돌려 놓는 각도 (코드의 pan 값: 90 = CAMERA_FRONT_PAN 이 가리키는 곳, 지금은 로봇 오른쪽 마커 줄)
+    scan_pause_ms: int = 0    # 카메라를 돌린 뒤 마커를 알아보도록 멈춰 있는 시간
+    side_approach: bool = False  # 옆 카메라 모드에서 마커가 가운데 오면 바로 서서 쏟지 않고 오른쪽으로 더 다가갈지
+    fail_retries: int = 0     # 마커를 못 찾는 등으로 실패하면 (줄 따라가기면 전진한 만큼 뒤로 물러난 뒤) 마커를 다시 찾으러 가는 횟수
+    row_mode: bool = False    # True 면 줄 따라가기: 회전·카메라 둘러보기·한 바퀴 돌기 없이 전진·후진·옆 이동만으로 목표 마커 앞에 선다
+    back_size: float = 0.0    # 줄 따라가기에서 마커가 이만큼보다 크게 보이면 너무 가까운 것 → 후진 (0 이면 arrive_size 의 1.8배)
+    ahead_cx: float = 0.7     # 앞쪽 마커 후보로 칠 가로 위치 범위 (|cx| 가 이 안이면 앞에 있다고 보고 먼저 다가감)
 
     @classmethod
     def from_dict(cls, d: dict) -> "NavConfig":
@@ -89,7 +111,7 @@ def decide(markers: list[Marker], target: int, cm: float, cfg: NavConfig, last_c
             return Step("closer", "turn_right" if cx > 0 else "turn_left", cfg.turn_speed, turn_ms_for(cx, cfg))
         return Step("closer", "forward", cfg.speed, cfg.pulse_ms)
     centered = abs(m.cx) <= cfg.center_tol
-    if m.size >= cfg.arrive_size or (centered and 0 < cm <= cfg.arrive_cm):
+    if (m.size >= cfg.arrive_size and abs(m.cx) <= cfg.arrive_cx) or (centered and 0 < cm <= cfg.arrive_cm):
         return Step("arrived")
     if not centered:
         return Step("align", "turn_right" if m.cx > 0 else "turn_left", cfg.turn_speed, turn_ms_for(m.cx, cfg))
@@ -108,6 +130,7 @@ class Mission:
         self.state = {"phase": "idle", "station": None, "target": None, "message": "", "steps": 0}
         self.seen: list[Marker] = []
         self.heading = 0.0  # 임무 시작 방향 기준 대략의 방향(도), + = 왼쪽
+        self._net = 0       # 앞으로 간 걸음 - 뒤로 간 걸음 (실패 뒤 제자리로 돌아오는 데 쓴다)
         self._task: asyncio.Task | None = None
 
     @property
@@ -149,8 +172,12 @@ class Mission:
 
     async def _run(self, station: str, dump: bool, return_home: bool) -> None:
         try:
-            await asyncio.to_thread(self.robot.driver.set_servo, 90, None)  # 카메라 정면
-            await self._go(station)
+            if not self.cfg.pan_look:
+                self._set("starting", "카메라를 마커 쪽으로 돌리는 중")
+                await asyncio.to_thread(self.robot.driver.set_servo, self.cfg.scan_pan, None)  # 카메라를 마커 줄 쪽으로
+            if self.cfg.scan_pause_ms and not self.cfg.pan_look:
+                await self.sleep(self.cfg.scan_pause_ms / 1000)  # 돌아간 화면이 안정되고 마커를 알아볼 때까지 멈춰 있는다
+            await self._go_with_retries(station)
             if dump:
                 side = self.cfg.dump_side
                 strafed = await self._dock_side(self.stations[station]) if side else 0
@@ -178,6 +205,27 @@ class Mission:
             await self._stop()
             raise
 
+    async def _go_with_retries(self, station: str) -> None:
+        """목표 마커까지 간다. 실패하면 (줄 따라가기: 전진한 만큼 뒤로 물러나) 처음 자리에서 마커를 다시 찾는다."""
+        self._net = 0
+        if self.cfg.pan_look:  # pan_look 은 앞뒤로 훑는 것을 스스로 한다 (되돌아가며 후진 확인)
+            await self._go(station)
+            return
+        for attempt in range(self.cfg.fail_retries + 1):
+            try:
+                await self._go(station)
+                return
+            except NavError as e:
+                if attempt >= self.cfg.fail_retries:
+                    raise
+                label = self.stations[station]["label"]
+                self._set("search", f"{label} 못 찾음 ({e}) → 다시 마커를 찾으러 갑니다 ({attempt + 1}/{self.cfg.fail_retries})")
+                if self.cfg.row_mode:
+                    for _ in range(max(0, self._net)):
+                        await self._pulse("backward", self.cfg.speed, self.cfg.pulse_ms)
+                    self._net = 0
+                await self._stop()
+
     async def _dump_with_tray(self, label: str) -> None:
         """샤오 카메라로 트레이를 보고 쏟는다: 쏟기 전에 물건이 떨어질 위치인지, 쏟은 뒤에 비었는지 (안 비면 최대 2번 더)."""
         tray = getattr(self.robot, "tray", None)
@@ -196,9 +244,10 @@ class Mission:
         sorter = getattr(self.robot, "sorter", None)
         for attempt in range(3):  # 처음 한 번 + 안 비면 2배속으로 최대 2번 더
             fast = attempt > 0
-            self._set("dumping", f"{label} 에 쏟는 중" + (f" (안 비어서 2배속으로 다시 {attempt}번째)" if fast else ""))
+            speed = 2.0 ** attempt  # 안 비면 이전보다 2배 빠르게: 1배 → 2배 → 4배
+            self._set("dumping", f"{label} 에 쏟는 중" + (f" (안 비어서 {speed:g}배속으로 다시 {attempt}번째)" if fast else ""))
             if fast:
-                await asyncio.to_thread(self.robot.driver.dump, 2.0)
+                await asyncio.to_thread(self.robot.driver.dump, speed)
             else:
                 await asyncio.to_thread(self.robot.driver.dump)
             if self._board_judges():  # 샤오 판정 영상에서 '비어있음'이 확인되면 끝
@@ -242,6 +291,7 @@ class Mission:
         await self._stop()
         await self.sleep(self.cfg.settle_ms / 1000)
         self.heading += self._turn_deg(action, ms)
+        self._net += {"forward": 1, "backward": -1}.get(action, 0)
 
     def _turn_deg(self, action: str, ms: int) -> float:
         """회전 시간 → 대략의 각도 (+ = 왼쪽)"""
@@ -381,12 +431,181 @@ class Mission:
             await self.sleep(self.cfg.look_settle_ms / 1000)
         return found
 
+    async def _go_row(self, name: str) -> None:
+        """줄 따라가기: 마커를 일렬로 세워 둔 곳에서 회전 없이 목표 번호 마커 앞까지 간다.
+        - 목표가 보이면: 한쪽으로 치우쳤으면 옆으로 이동(몸을 돌리지 않는다) → 가운데면 전진 → 가까워지면 도착, 너무 가까우면 후진
+        - 목표가 안 보이면: 보일 때까지 앞으로 전진 (마커 줄 바로 앞인데도 목표 번호가 없으면 멈춘다)"""
+        cfg, info = self.cfg, self.stations[name]
+        target = info["marker"]
+        self.state["target"] = name
+        side = cfg.side_camera
+        step_ms = cfg.side_step_ms if side and cfg.side_step_ms else cfg.pulse_ms
+        ref_size, fixes = None, 0  # 줄을 따라 갈 때 기준이 되는 마커 크기(처음 본 것), 간격을 되돌린 횟수
+        seen_cx, lost = None, 0  # 목표 마커를 마지막으로 본 가로 위치, 그 뒤 연속으로 못 본 횟수
+        back_size = cfg.back_size or cfg.arrive_size * 1.8
+        last_size, advance = 0.0, 0
+        for _ in range(cfg.step_limit):
+            await self._look()
+            self.state["steps"] += 1
+            m = next((x for x in self.seen if x.id == target), None)
+            if m is not None:
+                seen_cx, lost = m.cx, 0
+            if m is None:
+                if last_size >= cfg.arrive_size * cfg.lost_near:
+                    # 바로 전 걸음에 크게 보였는데 사라짐 = 너무 가까워 화면 밖(카메라가 낮아 마커가 아래로 빠짐) → 도착
+                    self._set("arrived", f"{info['label']} (마커 {target}) 가까워서 안 보임 → 도착")
+                    await self._stop()
+                    return
+                last_size = 0.0
+                if side and seen_cx is not None:  # 방금 보이던 목표를 놓쳤다 → 지나치지 말고 마지막으로 본 쪽으로 한 걸음씩 돌아가 다시 본다
+                    lost += 1
+                    if lost > 2:
+                        seen_cx = None
+                    else:
+                        self._set("align", f"{info['label']} (마커 {target}) 잠깐 놓침 → 마지막으로 본 쪽으로 다시 확인")
+                        await self._pulse("forward" if seen_cx > 0 else "backward", cfg.speed, step_ms)
+                        continue
+                near = [x for x in self.seen if x.id != CANDIDATE and x.size >= cfg.arrive_size and abs(x.cx) <= cfg.arrive_cx]
+                if near and not side:  # 정면에 다른 번호 마커가 바로 앞인데 목표가 없다 → 더 가면 부딪힌다 (옆에 비켜 있는 마커는 그냥 지나간다)
+                    ids = sorted({x.id for x in near})
+                    raise NavError(f"{info['label']} 마커 줄 바로 앞인데 마커 {target} 번이 안 보입니다 (보이는 번호 {ids})")
+                row = [x for x in self.seen if x.id != CANDIDATE]
+                if side and cfg.side_hold and row:  # 줄 옆 마커들은 같은 크기로 보여야 한다 → 크기가 달라지면 길이 휘어 줄에서 멀어지거나 가까워진 것
+                    ref = min(row, key=lambda x: abs(x.cx))
+                    if ref_size is None:
+                        ref_size = ref.size
+                    elif fixes < cfg.side_hold_max and abs(ref.size - ref_size) > cfg.side_hold * ref_size:
+                        fixes += 1
+                        away = ref.size < ref_size       # 작아졌다 = 줄에서 멀어짐 → 오른쪽(줄 쪽)으로
+                        self._set("align", f"길이 {'줄에서 멀어져' if away else '줄에 가까워져'} {'오른쪽' if away else '왼쪽'}으로 되돌리는 중 ({fixes}/{cfg.side_hold_max})")
+                        await self._pulse("strafe_right" if away else "strafe_left", cfg.speed, step_ms)
+                        continue
+                if advance >= cfg.line_advance_steps:
+                    raise NavError(f"{info['label']} 앞으로 {advance}걸음 가며 찾았지만 마커 {target} 번이 안 보입니다. "
+                                   "마커를 일렬로, 카메라가 볼 수 있게 놓아 주세요")
+                advance += 1
+                others = sorted({x.id for x in self.seen if x.id != CANDIDATE})
+                self._set("search", f"{info['label']} (마커 {target}) " + (f"마커 {others} 는 아님 → " if others else "")
+                          + f"앞으로 한 걸음 가서 다시 확인 ({advance}/{cfg.line_advance_steps})")
+                await self._pulse("forward", cfg.speed, step_ms)
+                continue
+            cm = 0 if side else await asyncio.to_thread(self.robot.driver.distance_cm)  # 옆 카메라면 앞쪽 초음파는 쓸모없다
+            centered = abs(m.cx) <= cfg.center_tol
+            if side and centered and not cfg.side_approach:  # 옆 카메라: 마커 바로 앞(줄 방향으로 마주 봄)에 서면 멈춰서 쏟는다
+                self._set("arrived", f"{info['label']} (마커 {target}) 바로 앞")
+                await self._stop()
+                return
+            if (cfg.arrive_size <= m.size < back_size and abs(m.cx) <= cfg.arrive_cx) or (centered and 0 < cm <= cfg.arrive_cm):
+                self._set("arrived", f"{info['label']} (마커 {target})")
+                await self._stop()
+                return
+            last_size = m.size
+            if side:  # 오른쪽을 보는 카메라: 화면 오른쪽 = 로봇 앞쪽 (실측: 후진하면 마커가 화면 오른쪽으로 간다)
+                if not centered:
+                    self._set("align", f"{info['label']} (마커 {target}) 줄 따라 {'전진' if m.cx > 0 else '후진'}해 맞추는 중")
+                    await self._pulse("forward" if m.cx > 0 else "backward", cfg.speed, step_ms)
+                elif m.size >= back_size:
+                    self._set("approach", f"{info['label']} (마커 {target}) 너무 가까워 왼쪽으로")
+                    await self._pulse("strafe_left", cfg.speed, cfg.pulse_ms)
+                else:
+                    self._set("approach", f"{info['label']} (마커 {target}) 오른쪽으로 다가가는 중")
+                    await self._pulse("strafe_right", cfg.speed, cfg.pulse_ms)
+            elif m.size >= back_size:  # 너무 가까움 → 후진
+                self._set("approach", f"{info['label']} (마커 {target}) 너무 가까워 후진")
+                await self._pulse("backward", cfg.speed, cfg.pulse_ms)
+            elif not centered:  # 몸은 돌리지 않고 옆으로 이동해 마커를 가운데로
+                self._set("align", f"{info['label']} (마커 {target}) 옆으로 이동해 가운데로")
+                await self._pulse("strafe_right" if m.cx > 0 else "strafe_left", cfg.speed, cfg.pulse_ms)
+            else:
+                self._set("approach", f"{info['label']} (마커 {target})")
+                await self._pulse("forward", cfg.speed, cfg.pulse_ms)
+        raise NavError(f"{info['label']} 까지 너무 오래 걸립니다 (걸음 {cfg.step_limit} 초과)")
+
+    async def _go_pan_look(self, name: str) -> None:
+        """일직선 전진·후진만 (회전·옆걸음·한 바퀴 돌기 없음). 한 걸음마다 멈춰 카메라를 오른쪽(scan_pan)으로 돌려 마커를 확인한다.
+        목표 마커가 보이면 바로 멈춰 쏟고, 아니면 카메라를 정면으로 돌리고 한 걸음. 줄 끝까지 가도 없으면 몸을 돌리지 않고 *후진*하며 같은 방법으로
+        다시 확인한다 (카메라는 계속 오른쪽 마커 줄을 본다). 앞으로(line_advance_steps)·뒤로(출발점 + pan_back_margin) 번갈아 최대 fail_retries+1 번 훑는다."""
+        cfg, info = self.cfg, self.stations[name]
+        target = info["marker"]
+        self.state["target"] = name
+        net = aligns = lost = 0   # net = 출발점에서 앞으로 간 걸음 수 (뒤로 가면 줄어든다)
+        seen_cx = None
+        direction = 1             # +1 전진, -1 후진
+        cur_pan = None            # 지금 카메라가 향한 각도 (같으면 서보를 다시 움직이지 않는다)
+        judged: set = set()       # 이미 멈춰서 판단한 마커 번호
+        passes = 1
+        for _ in range(cfg.step_limit):
+            self._set("search" if seen_cx is None else "align", f"{info['label']} (마커 {target}) 멈춰서 오른쪽을 보고 확인 중")
+            if cur_pan != cfg.scan_pan:  # 카메라가 이미 마커 줄을 보고 있으면 다시 돌리지 않는다 (전진·후진만으로 찾는다)
+                await asyncio.to_thread(self.robot.driver.set_servo, cfg.scan_pan, None)
+                cur_pan = cfg.scan_pan
+                if cfg.scan_pause_ms:
+                    await self.sleep(cfg.scan_pause_ms / 1000)  # 돌아간 화면이 안정되고 마커를 알아볼 때까지 멈춰 있는다
+            await self._look()
+            self.state["steps"] += 1
+            m = next((x for x in self.seen if x.id == target), None)
+            fresh = sorted({x.id for x in self.seen if x.id != CANDIDATE and x.id != target and x.id not in judged})
+            if m is None and fresh:  # 목표가 아닌 마커가 처음 보임 → 멈춘 채 판단을 보여 주고 (트레이와 다름) 그다음 전진
+                judged.update(fresh)
+                self._set("search", f"마커 {fresh} 번이 보임 → 트레이는 {info['label']}(마커 {target}) → 다른 마커라 지나감")
+                await self.sleep(cfg.pan_judge_ms / 1000)
+            if m is not None:
+                seen_cx, lost = m.cx, 0
+                if not cfg.pan_center or abs(m.cx) <= cfg.center_tol:
+                    self._set("arrived", f"{info['label']} (마커 {target}) 보여서 멈춤 → 트레이와 같은 마커라 쏟는다")
+                    await self._stop()
+                    return
+                if aligns >= cfg.pan_align_max:
+                    raise NavError(f"{info['label']} 마커 {target} 번을 가운데에 맞추지 못했습니다")
+                aligns += 1
+                self._set("align", f"{info['label']} (마커 {target}) 줄 방향으로 {'전진' if m.cx > 0 else '후진'}해 맞추는 중")
+                await self._pulse("forward" if m.cx > 0 else "backward", cfg.speed, cfg.pan_align_ms)
+                net += 1 if m.cx > 0 else -1
+                continue
+            if seen_cx is not None and lost < 2:  # 방금 보이던 목표를 놓침 → 지나쳤으니 마지막으로 본 쪽으로 한 걸음 돌아가 다시 본다
+                lost += 1
+                await self._pulse("forward" if seen_cx > 0 else "backward", cfg.speed, cfg.pan_align_ms)
+                net += 1 if seen_cx > 0 else -1
+                continue
+            seen_cx = None
+            others = sorted({x.id for x in self.seen if x.id != CANDIDATE})
+            end = net >= cfg.line_advance_steps if direction > 0 else net <= -cfg.pan_back_margin
+            if end:  # 이 방향 끝 → 몸을 돌리지 않고 반대(후진/전진)로 같은 방법으로 다시 훑는다
+                if passes > cfg.fail_retries:
+                    raise NavError(f"{info['label']} 앞뒤로 훑으며 확인했지만 마커 {target} 번이 안 보입니다. 마커를 카메라가 볼 수 있게 놓아 주세요")
+                passes += 1
+                direction = -direction
+                self._set("search", f"{info['label']} (마커 {target}) 줄 끝까지 없음 → {'전진' if direction > 0 else '후진'}하며 다시 확인 ({passes}/{cfg.fail_retries + 1})")
+            self._set("search", f"{info['label']} (마커 {target}) " + (f"마커 {others} 는 아님 → " if others else "")
+                      + f"{'앞' if direction > 0 else '뒤'}로 한 걸음 (위치 {net})")
+            if cur_pan != cfg.travel_pan:  # travel_pan 이 scan_pan 과 같으면 카메라는 움직이지 않는다
+                await asyncio.to_thread(self.robot.driver.set_servo, cfg.travel_pan, None)
+                cur_pan = cfg.travel_pan
+            try:
+                await self._pulse("forward" if direction > 0 else "backward", cfg.speed, cfg.pan_step_ms)
+            except NavError:
+                if direction > 0 and passes <= cfg.fail_retries:  # 앞이 막혔다 = 줄의 끝. 실패로 끝내지 말고 후진하며 다시 훑는다
+                    await self._stop()
+                    self._set("search", f"{info['label']} 앞이 막힘 → 줄 끝으로 보고 후진하며 다시 확인")
+                    net = cfg.line_advance_steps
+                    continue
+                raise
+            net += direction
+        raise NavError(f"{info['label']} 까지 너무 오래 걸립니다 (걸음 {cfg.step_limit} 초과)")
+
     async def _go(self, name: str) -> None:
+        if self.cfg.pan_look:
+            await self._go_pan_look(name)
+            return
+        if self.cfg.row_mode:
+            return await self._go_row(name)
         cfg, info = self.cfg, self.stations[name]
         target = info["marker"]
         self.state["target"] = name
         last_size, looked, sightings, done, went_back = 0.0, False, None, [], False
         rescans_left = cfg.rescans
+        ahead_tried = False
+        advance_steps = 0
         for _ in range(cfg.step_limit):
             await self._look()
             self.state["steps"] += 1
@@ -398,11 +617,35 @@ class Mission:
                     await self._stop()
                     return
                 last_size = 0.0
+                if not ahead_tried:  # 0) 번호는 못 읽었지만 마커처럼 생긴 네모가 앞에 보이면, 돌아보기 전에 먼저 그쪽으로 다가가 번호를 읽는다
+                    ahead_tried = True
+                    cands = [c for c in self.seen if c.id == CANDIDATE and abs(c.cx) < cfg.ahead_cx]
+                    if cands:
+                        best = max(cands, key=lambda c: c.size)  # 가장 크게 보이는(가까운) 네모
+                        bearing = self._bearing(best)
+                        done.append(bearing)  # 가 본 방향은 나중에 미식별 블록 후보에서 뺀다
+                        self._set("visit", f"{info['label']} (마커 {target}) 앞에 보이는 마커 후보로 다가가는 중")
+                        await self._visit(info, bearing)  # 번호가 읽혀 목표면 목표를 보는 채로 돌아온다 → 다음 반복에서 바로 접근
+                        continue
                 if not looked:  # 1) 카메라만 둘러보기 → 보이면 그쪽으로 한 번 회전
                     looked = True
                     side = await self._look_around(info)
                     if side is not None:
                         await self._pulse("turn_right" if side > 0 else "turn_left", cfg.turn_speed, cfg.turn90_ms // 2)
+                    continue
+                if cfg.line_mode:  # 마커 줄이 안 보이면 몸으로 돌지 않고 앞으로 전진하며 스캔한다
+                    near = [x for x in self.seen if x.id != CANDIDATE and x.size >= cfg.arrive_size]
+                    if near:  # 마커 줄 바로 앞인데도 목표 번호가 없다 → 더 가면 부딪힌다
+                        ids = sorted({x.id for x in near})
+                        raise NavError(f"{info['label']} 마커 줄 바로 앞인데 마커 {target} 번이 안 보입니다 (보이는 번호 {ids})")
+                    if advance_steps >= cfg.line_advance_steps:
+                        raise NavError(f"{info['label']} 앞으로 {advance_steps}걸음 가며 찾았지만 마커 {target} 번이 안 보입니다. "
+                                       "마커를 일렬로, 카메라가 볼 수 있게 놓아 주세요")
+                    advance_steps += 1
+                    self._set("search", f"{info['label']} (마커 {target}) 앞으로 전진하며 마커 줄 찾는 중 ({advance_steps}/{cfg.line_advance_steps})")
+                    await self._pulse("forward", cfg.speed, cfg.pulse_ms)
+                    if advance_steps % 5 == 0:
+                        looked = False  # 5걸음마다 카메라로 다시 좌우를 둘러본다
                     continue
                 if sightings is None:  # 2) 몸으로 한 바퀴만
                     sightings = await self._scan(info)

@@ -372,6 +372,35 @@ def board_stream():
     return StreamingResponse(_board_cam().frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
+@app.get("/api/judge/frame.jpg")
+def judge_frame():
+    """파이 판정이 마지막으로 본 샤오 사진 한 장"""
+    from fastapi.responses import Response
+    j = robot.judge
+    if j is None or j.last_jpeg is None:
+        raise HTTPException(status_code=503, detail="파이 판정이 아직 사진을 받지 못했습니다")
+    return Response(content=j.last_jpeg, media_type="image/jpeg")
+
+
+@app.get("/api/judge/stream")
+def judge_stream():
+    """파이 판정이 받는 샤오 사진을 영상으로 다시 보낸다. 대시보드는 샤오에 직접 붙지 말고 이 주소를 쓴다
+    (샤오가 Wi-Fi 영상을 보내면 USB 사진이 밀려 판정이 느려진다)."""
+    j = robot.judge
+    if j is None:
+        raise HTTPException(status_code=503, detail="파이 판정을 쓰지 않습니다 (JUDGE=pi, BOARD_PORT=none)")
+
+    def frames():
+        last = -1
+        while True:
+            if j.last_jpeg is not None and j.frame_seq != last:
+                last = j.frame_seq
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + j.last_jpeg + b"\r\n"
+            time.sleep(0.08)
+
+    return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
 @app.get("/api/judge")
 def judge_status():
     """파이 판정(JUDGE=pi) 상태: 마지막 검출과 확정 진행 (왜 확정이 안 나는지 볼 때)"""

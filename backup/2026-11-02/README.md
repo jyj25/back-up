@@ -63,7 +63,7 @@ Wi-Fi 이름·비밀번호가 든 `wifi_secrets.h` 는 저장소에 넣지 않�
 
 ## 알려진 한계
 
-- 마커(블록 한 변 약 4cm)는 멀면 안 읽힌다. 못 찾으면 한 바퀴 둘러보고 최대 2번 더 돈다 → 마커를 못 찾는 환경에서는 많이 돈다. 마커가 읽히는 가까운 거리에서는 잘 찾는다.
+- 마커(블록 한 변 약 4cm)는 멀면 안 읽힌다. (이 줄은 예전 동작: 아래 "저녁 업데이트"의 `pan_look` 방식으로 바뀌어 더는 한 바퀴 돌지 않는다.)
 - 자동 실행(`autostart.sh` 서비스 또는 `@reboot`)은 설치하지 않았다. 파이가 재부팅하면 서버를 다시 켜야 한다 (`robot.env` 를 불러 uvicorn 실행).
 - 실제 로봇으로 찾기 → 도착 → 쏟기를 끝까지 돌려 본 것은 이 백업 이후다. 알고리즘은 시뮬레이션 시험으로 확인했다.
 - 모델 정확도: 종이·`general_trash` 일부는 검출이 약하다 (모델 자체의 한계).
@@ -74,3 +74,15 @@ Wi-Fi 이름·비밀번호가 든 `wifi_secrets.h` 는 저장소에 넣지 않�
 2. 가상환경(`raspbot-venv`)에 `fastapi[standard]`, `pyserial`, `pytest`, `opencv`, `raspbot`, `edge_impulse_linux`, `six` 를 설치한다 (`requirements.txt` 참고).
 3. 모델: `jeongmin/robot/model/README.md` 대로 `jyj25.eim` (float32) 을 받는다.
 4. 샤오: `xiao_stream` 펌웨어를 올린다 (`JUDGE=pi` 용). 보드 판정은 `xiao_sorter` + 위 빌드 명령.
+
+## 저녁 업데이트 (같은 날, 실제 로봇으로 끝까지 성공)
+
+환경: 마커(AprilTag 36h11: 1 홈, 2 캔, 3 페트, 4 종이)를 로봇 진행 방향 **오른쪽에 일렬**로 세우고, 로봇은 줄과 나란히 **앞뒤로만** 움직인다 (회전·옆걸음·한 바퀴 돌기 없음).
+
+- `nav.pan_look` (`stations.blocks.json`): 한 걸음마다 멈춰서 카메라(오른쪽 `scan_pan`)로 마커를 본다. 목표(트레이 쓰레기와 같은 번호)가 보이면 바로 멈춰 쏟고, 다른 번호는 한 번 멈춰 판단(`pan_judge_ms`)한 뒤 전진한다. 줄 끝이거나 앞이 막히면 몸을 돌리지 않고 *후진*하며 같은 방법으로 다시 본다 (`fail_retries`+1 번 훑음).
+- 카메라 각도: `travel_pan` = `scan_pan` = 15 (서보가 움직이지 않게 같은 값). 카메라가 바닥을 내려다봐서 마커가 화면 위쪽에 걸린다 → 카메라를 손으로 약간 들어 주면 더 안정적. 위아래 서보(S2)는 쏟기용이라 쓸 수 없다.
+- 쏟기: `DUMP_ANGLE=105` (`robot.env`, 서보 한계 110). 안 비면 1배 → 2배 → 4배로 다시 쏟는다.
+- 판정: `JUDGE_VOTE_N=0` (다수결 끔, 같은 1등 종류가 3프레임 연속 + 확신도 0.8 이상). 출발(READY)은 확정을 기다리지 않고 최근 프레임에서 퍼센트가 제일 높은 종류로 간다 (`top`).
+- 기타 설정(`stations.blocks.json`): `row_mode`, `side_camera`/`side_*` (옆 카메라 모드, 지금은 `pan_look` 이 우선), `fail_retries`, `line_advance_steps`(40), `scan_pause_ms`(1500), `pan_judge_ms`(1500).
+- 시험 111개 통과 (`tests/`). 대시보드는 같은 서버 API 를 부르므로 같은 동작이다.
+- 서버 켜기: `cd ~/ai2-8/jeongmin/robot; set -a; . ./robot.env; set +a; uvicorn server.main:app --host 0.0.0.0 --port 8000`. (SSH 로 시작할 때 `pkill -f uvicorn ...` 처럼 명령줄에 같은 글자가 있으면 자기 세션까지 죽는다 → `pkill -f "[u]vicorn"` 사용)

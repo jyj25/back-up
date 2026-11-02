@@ -43,7 +43,7 @@ def test_adjacent_cells_form_one_object_and_far_cells_do_not():
 
 
 def test_picks_highest_confidence_object():
-    frame = [box("pet", 0.85, 10, 10), box("can", 0.97, 70, 70)]
+    frame = [box("pet", 0.65, 10, 10), box("can", 0.97, 70, 70)]
     r = run(Detector(), [frame] * 3)
     assert r[2][0] == "decision" and r[2][1] == "can"
 

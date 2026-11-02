@@ -32,6 +32,7 @@ JOIN_GAP = 2       # 두 칸 사이가 이 픽셀 이하면 붙은 것으로 본
 MARGIN = float(os.environ.get("JUDGE_MARGIN", "0"))  # (선택) 확정하려면 1등 종류가 다른 종류보다 이만큼 이상 확신해야 한다. 0 이면 끔 — 다수결(VOTE_N)이 대신한다
 VOTE_N = int(os.environ.get("JUDGE_VOTE_N", "12"))  # 최근 이만큼의 프레임으로 다수결 (0 이면 예전처럼 같은 결과 CONFIRM_N 번 연속)
 VOTE_RATIO = float(os.environ.get("JUDGE_VOTE_RATIO", "0.7"))  # 최근 프레임 중 이 비율 이상이 같은 종류여야 확정
+PRESENCE_CONF = 0.85  # 모델은 못 찾았지만 빈 트레이와 달라서 종이로 본 검출의 확신도 (확정 기준 0.80 이상)
 LOG_KEEP = 300     # judge_log/ 에 남기는 확정 사진 수
 
 
@@ -144,8 +145,11 @@ class Detector:
 class PiJudge:
     """샤오 사진 → 파이에서 모델 → 판정 줄을 on_line 으로 넘긴다 (스레드 하나)."""
 
-    def __init__(self, cam, model_path: str, on_line, interval_s: float = 0.0) -> None:
+    def __init__(self, cam, model_path: str, on_line, interval_s: float = 0.0, presence=None, presence_min: float = 0.02) -> None:
         self.cam, self.model_path, self.on_line, self.interval_s = cam, model_path, on_line, interval_s
+        # presence(img) -> 빈 트레이 기준 사진과의 차이 비율. 모델이 아무것도 못 찾았는데 이 값이 presence_min 이상이면 '종이'로 본다
+        self.presence, self.presence_min = presence, presence_min
+        self.fallback = False  # 마지막 프레임이 이 보조 판단으로 정해졌나
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.detector = Detector(vote_n=VOTE_N)
@@ -167,6 +171,24 @@ class PiJudge:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=3)
+
+    def apply_presence(self, dets: list, img) -> list:
+        """모델이 물체를 하나도 못 찾았는데 사진이 빈 트레이 기준 사진과 충분히 다르면, 종이(가장 못 찾는 물체)가 있는 것으로 본다."""
+        self.fallback = False
+        if self.presence is None:
+            return dets
+        try:
+            a = self.presence(img)
+        except Exception:
+            return dets
+        if a is None:
+            return dets
+        if a < self.presence_min:  # 빈 트레이 기준 사진과 같다 → 모델이 뭐라 하든 (초록 부품을 캔으로 읽는 등) 빈 트레이
+            return []
+        if dets:  # 트레이가 다르고 모델이 물체를 찾았다 → 모델 결과를 그대로 쓴다
+            return dets
+        self.fallback = True  # 트레이는 다른데 모델이 못 찾았다 → 종이(가장 못 찾는 물체)
+        return [("paper", PRESENCE_CONF, 10, 30, 76, 60)]
 
     def frame_obj(self, dets, m: int, ms: int) -> dict:
         """판정이 아닌 프레임 한 줄. 대시보드가 쓰는 state·probs·box·streak 을 같이 준다 (event 가 'frame' 이면 그대로 씀)."""
@@ -246,6 +268,7 @@ class PiJudge:
                 boxes = runner.classify(feats)["result"].get("bounding_boxes", [])
                 dets = [(b["label"], float(b["value"]), b["x"], b["y"], b["width"], b["height"])
                         for b in boxes if b["value"] >= DET_MIN]
+                dets = self.apply_presence(dets, img)
                 event, cls, conf, m = self.detector.update(dets, int(time.monotonic() * 1000))
                 ms = int((time.time() - t0) * 1000)  # 사진을 받기 시작한 때부터 판정까지 (사진은 이보다 늦게 찍히지 않는다)
                 self.last_ms = ms

@@ -50,6 +50,20 @@ class TrayCheck:
         self._base = self._gray(img)
         return True
 
+    def area_of(self, img) -> float | None:
+        """주어진 사진(BGR)이 빈 트레이 기준 사진과 트레이 영역에서 얼마나 다른지 (0~1). 기준 사진이 없거나 크기가 다르면 None."""
+        if self._base is None or img is None:
+            return None
+        g = self._gray(img)
+        if g.shape != self._base.shape:
+            return None
+        _, m = cv2.threshold(cv2.absdiff(g, self._base), self.diff, 255, cv2.THRESH_BINARY)
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        h, w = m.shape
+        x0, y0, x1, y1 = self.roi
+        roi = m[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)]
+        return float(np.count_nonzero(roi)) / max(1, roi.size)
+
     def look(self) -> dict | None:
         """{present, area, cx, cy, in_zone}. 기준 사진이 없거나 사진을 못 받으면 None."""
         if not self.ready:

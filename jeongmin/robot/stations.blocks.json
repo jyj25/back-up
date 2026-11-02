@@ -50,6 +50,8 @@
     "pan_look": true,
     "travel_pan": 15,
     "pan_center": true,
+    "return_to_start": true,
+    "hold_row": true,
     "side_approach": false,
     "scan_pan": 15,
     "scan_pause_ms": 1500,

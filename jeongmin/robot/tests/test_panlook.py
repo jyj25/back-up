@@ -67,7 +67,7 @@ def test_aligns_with_forward_and_backward_only():
     moves = []
 
     def markers():
-        return [Marker(target, (3 - w["x"]) * 0.2, 0.1)]
+        return [Marker(target, (w["x"] - 3) * 0.2, 0.1)]  # 앞으로 갈수록 마커는 화면 오른쪽(뒤)으로 간다
 
     def move(action, speed, ms):
         moves.append(action)

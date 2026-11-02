@@ -204,3 +204,54 @@ def test_blocked_ahead_is_treated_as_end_of_row_and_sweeps_backward():
     _run(robot)
     assert robot.mission.state["phase"] == "done" and dumps == [1], robot.mission.state
     assert moves == ["forward"] * 3 + ["backward"] * 2, moves
+
+
+def test_does_not_dump_while_another_marker_is_still_alongside():
+    robot = _robot()
+    robot.mission.cfg.pan_center = False
+    target, other = main.STATIONS["can"]["marker"], main.STATIONS["pet"]["marker"]
+    moves, dumps = [], []
+
+    def markers():
+        net = moves.count("forward") - moves.count("backward")
+        out = []
+        if net <= 1:
+            out.append(Marker(other, -0.3, 0.1))        # 다른 마커는 위치 0~1 에서 옆에 보인다
+        if 1 <= net <= 3:
+            out.append(Marker(target, 0.5, 0.1))        # 목표는 위치 1~3 에서 보인다 (1 에서는 다른 마커와 같이)
+        return out
+
+    robot.driver.set_servo = lambda pan, tilt: None
+    robot.vision.markers = markers
+    robot.move = lambda action, speed, ms: moves.append(action)
+    robot.driver.dump = lambda *a: dumps.append(len(moves))
+    _run(robot)
+    assert robot.mission.state["phase"] == "done", robot.mission.state
+    assert moves == ["forward"] * 2 and dumps == [2], (moves, dumps)      # 위치 1 에서 목표가 보여도 다른 마커가 빠진 위치 2 에서 쏟는다
+
+
+def test_goes_back_to_where_the_target_was_seen_after_passing_the_other_marker():
+    robot = _robot()
+    robot.mission.cfg.pan_center = False
+    target, other = main.STATIONS["can"]["marker"], main.STATIONS["pet"]["marker"]
+    moves, dumps = [], []
+
+    def markers():
+        net = moves.count("forward") - moves.count("backward")
+        out = []
+        if net in (0, 1, 2):
+            out.append(Marker(other, -0.3, 0.1))        # 다른 마커는 위치 0~2
+        if net == 1:
+            out.append(Marker(target, 0.5, 0.1))        # 목표는 위치 1 에서만 (다른 마커와 같이) 보이고, 3 이후엔 다른 마커도 없다
+        if net == 0 and moves.count("backward"):
+            out = []
+        return out
+
+    robot.driver.set_servo = lambda pan, tilt: None
+    robot.vision.markers = markers
+    robot.move = lambda action, speed, ms: moves.append(action)
+    robot.driver.dump = lambda *a: dumps.append(len(moves))
+    _run(robot)
+    assert moves[:3] == ["forward"] * 3, moves                             # 위치 1 에서 목표를 봤지만 다른 마커를 다 지날 때까지 전진
+    assert moves[3:5] == ["backward"] * 2, moves                          # 다 지난 뒤 목표를 봤던 위치 1 로 돌아간다
+    assert robot.mission.state["phase"] == "done" and dumps == [5], (robot.mission.state, dumps)   # 돌아가 보이면 다른 마커가 다시 보여도 쏟는다

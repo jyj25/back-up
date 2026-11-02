@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field, fields
 
 from .vision import CANDIDATE, Marker
@@ -131,6 +132,7 @@ class Mission:
         self.seen: list[Marker] = []
         self.heading = 0.0  # 임무 시작 방향 기준 대략의 방향(도), + = 왼쪽
         self._net = 0       # 앞으로 간 걸음 - 뒤로 간 걸음 (실패 뒤 제자리로 돌아오는 데 쓴다)
+        self.moves: list = []  # 이번 임무에서 바퀴에 보낸 명령 (시각, 동작, ms) — 어떻게 움직였는지 나중에 확인한다
         self._task: asyncio.Task | None = None
 
     @property
@@ -141,6 +143,7 @@ class Mission:
         if self.running:
             raise RuntimeError("이미 임무 중입니다")
         self.state = {"phase": "starting", "station": station, "target": station, "message": "", "steps": 0}
+        self.moves = []
         self._task = asyncio.create_task(self._run(station, dump, return_home))
 
     def cancel(self, reason: str = "취소") -> bool:
@@ -284,6 +287,8 @@ class Mission:
         return True
 
     async def _pulse(self, action: str, speed: int, ms: int) -> None:
+        self.moves.append((time.strftime("%H:%M:%S"), action, ms))
+        print(f"[mission] {action} {ms}ms", flush=True)
         self.robot.move(action, speed, ms + 300)  # 서버 자동 정지는 여유 있게, 실제 정지는 여기서
         if self.robot.blocked:
             raise NavError("앞에 장애물이 있어 멈췄습니다")
@@ -533,7 +538,10 @@ class Mission:
         direction = 1             # +1 전진, -1 후진
         cur_pan = None            # 지금 카메라가 향한 각도 (같으면 서보를 다시 움직이지 않는다)
         judged: set = set()       # 이미 멈춰서 판단한 마커 번호
+        target_net = None         # 다른 마커 때문에 못 쏟고 지나친 목표를 본 위치(net). 다른 마커를 다 지나면 그 위치로 돌아간다
+        returns = 0
         passes = 1
+        returning = False        # 목표를 봤던 자리로 돌아가는 중이면 다른 마커가 다시 보여도 목표가 보이는 순간 쏟는다
         for _ in range(cfg.step_limit):
             self._set("search" if seen_cx is None else "align", f"{info['label']} (마커 {target}) 멈춰서 오른쪽을 보고 확인 중")
             if cur_pan != cfg.scan_pan:  # 카메라가 이미 마커 줄을 보고 있으면 다시 돌리지 않는다 (전진·후진만으로 찾는다)
@@ -545,10 +553,18 @@ class Mission:
             self.state["steps"] += 1
             m = next((x for x in self.seen if x.id == target), None)
             fresh = sorted({x.id for x in self.seen if x.id != CANDIDATE and x.id != target and x.id not in judged})
-            if m is None and fresh:  # 목표가 아닌 마커가 처음 보임 → 멈춘 채 판단을 보여 주고 (트레이와 다름) 그다음 전진
+            if fresh:  # 목표가 아닌 마커가 처음 보임 → 멈춘 채 판단을 보여 주고 (트레이와 다름) 그다음 전진
                 judged.update(fresh)
                 self._set("search", f"마커 {fresh} 번이 보임 → 트레이는 {info['label']}(마커 {target}) → 다른 마커라 지나감")
                 await self.sleep(cfg.pan_judge_ms / 1000)
+            # 목표가 보여도, 목표가 아닌 마커가 아직 옆에 (비슷한 크기로) 있으면 그 마커를 다 지날 때까지 쏟지 않고 간다
+            alongside = [x for x in self.seen if m is not None and x.id != target and x.id != CANDIDATE and x.size >= 0.6 * m.size]
+            blocking = bool(alongside) and not returning
+            if blocking:
+                target_net = net  # 목표를 본 위치를 기억해 두고, 다른 마커가 시야에서 빠지면 그 위치로 돌아가 쏟는다
+                returns = 0
+                m = None
+                self._set("search", f"마커 {sorted({x.id for x in alongside})} 번이 아직 옆에 있음 → 다 지난 뒤에 {info['label']}(마커 {target}) 에 쏟는다")
             if m is not None:
                 seen_cx, lost = m.cx, 0
                 if not cfg.pan_center or abs(m.cx) <= cfg.center_tol:
@@ -562,12 +578,24 @@ class Mission:
                 await self._pulse("forward" if m.cx > 0 else "backward", cfg.speed, cfg.pan_align_ms)
                 net += 1 if m.cx > 0 else -1
                 continue
-            if seen_cx is not None and lost < 2:  # 방금 보이던 목표를 놓침 → 지나쳤으니 마지막으로 본 쪽으로 한 걸음 돌아가 다시 본다
+            other_in_view = any(x.id != target and x.id != CANDIDATE for x in self.seen)
+            if target_net is not None and not blocking and (returning or not other_in_view):  # 다른 마커가 시야에서 다 빠진 뒤에만 돌아간다
+                if net != target_net and returns < 3:  # 다른 마커를 다 지났는데 목표가 안 보임 → 목표를 봤던 위치로 걸음 수만큼 돌아간다
+                    returns += 1
+                    returning = True
+                    step = -1 if net > target_net else 1
+                    self._set("align", f"다른 마커를 다 지남 → {info['label']}(마커 {target}) 를 봤던 자리로 {'후진' if step < 0 else '전진'}")
+                    await self._pulse("forward" if step > 0 else "backward", cfg.speed, cfg.pan_step_ms)
+                    net += step
+                    continue
+                target_net, returning = None, False
+            if seen_cx is not None and lost < 2 and not blocking:  # 방금 보이던 목표를 놓침 → 지나쳤으니 마지막으로 본 쪽으로 한 걸음 돌아가 다시 본다
                 lost += 1
                 await self._pulse("forward" if seen_cx > 0 else "backward", cfg.speed, cfg.pan_align_ms)
                 net += 1 if seen_cx > 0 else -1
                 continue
-            seen_cx = None
+            if not blocking:
+                seen_cx = None
             others = sorted({x.id for x in self.seen if x.id != CANDIDATE})
             end = net >= cfg.line_advance_steps if direction > 0 else net <= -cfg.pan_back_margin
             if end:  # 이 방향 끝 → 몸을 돌리지 않고 반대(후진/전진)로 같은 방법으로 다시 훑는다

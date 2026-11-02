@@ -98,7 +98,9 @@ class Robot:
         if os.environ.get("JUDGE", "").lower() == "pi" and self.board_cam:
             from .judge import PiJudge
             self.judge = PiJudge(self.board_cam, os.environ.get("JUDGE_MODEL", str(Path(__file__).parent.parent / "model" / "jyj25.eim")),
-                                 self._on_board_line)
+                                 self._on_board_line,
+                                 presence=(self.tray.area_of if self.tray and os.environ.get("PAPER_BY_TRAY_DIFF") == "1" else None),
+                                 presence_min=float((_CONF.get("tray") or {}).get("min_area", 0.02)))
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
@@ -297,6 +299,7 @@ def mission_state():
     cur = robot.sorter.current or {}
     return {**robot.mission.state, "running": robot.mission.running,
             "seen": [m.to_dict() for m in decoded(robot.mission.seen)],
+            "moves": robot.mission.moves[-80:],
             "label": cur.get("label"), "confidence": cur.get("confidence"), "by": cur.get("by")}
 
 

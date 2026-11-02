@@ -49,7 +49,7 @@
     "side_camera": true,
     "pan_look": true,
     "travel_pan": 15,
-    "pan_center": false,
+    "pan_center": true,
     "side_approach": false,
     "scan_pan": 15,
     "scan_pause_ms": 1500,

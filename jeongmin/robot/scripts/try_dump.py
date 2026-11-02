@@ -24,8 +24,8 @@ from server import main  # noqa: E402
 async def run(robot, station: str, turn: bool = True) -> None:
     m = robot.mission
     await robot.start()  # 리모컨 비상 정지·자동 정지 감시
-    print("5초 뒤 시작", flush=True)
-    await asyncio.sleep(5)
+    print("1초 뒤 시작", flush=True)
+    await asyncio.sleep(1)
     t = time.time()
     if not turn:
         await asyncio.to_thread(robot.driver.dump)

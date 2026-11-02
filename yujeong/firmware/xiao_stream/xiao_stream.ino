@@ -8,6 +8,13 @@
 #include <WiFi.h>
 #include "web_assets.h"
 
+// 같은 Wi-Fi(공유기·핫스팟)에 붙이려면 wifi_secrets.h 를 만든다 (wifi_secrets.h.example 복사, 저장소에는 올라가지 않음).
+// 파일이 없거나 20초 안에 못 붙으면 아래 AP 모드로 동작한다.
+#if __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"   // static const char* STA_LIST[][2] = {{"이름1","비번1"}, {"이름2","비번2"}};  앞쪽이 우선
+#define USE_STA 1
+#endif
+
 const char* AP_SSID = "XIAO_ESP32S3_Sense";
 const char* AP_PASS = "seeedstudio";
 
@@ -93,9 +100,29 @@ void setup() {
   sensor_t* s = esp_camera_sensor_get();
   Serial.printf("카메라 센서 PID: 0x%x\n", s->id.PID);
 
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASS);
-  Serial.printf("AP: %s / %s\n", AP_SSID, AP_PASS);
+  String ip;
+#ifdef USE_STA
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);  // 스트림이 끊기지 않게
+  // STA_LIST 앞쪽이 우선순위가 높다 (라즈베리파이의 저장 Wi-Fi 순서와 같게). 하나씩 8초씩 시도한다.
+  for (size_t k = 0; k < sizeof(STA_LIST) / sizeof(STA_LIST[0]) && ip.length() == 0; k++) {
+    WiFi.disconnect();
+    WiFi.begin(STA_LIST[k][0], STA_LIST[k][1]);
+    for (int i = 0; i < 16 && WiFi.status() != WL_CONNECTED; i++) delay(500);
+    if (WiFi.status() == WL_CONNECTED) {
+      ip = WiFi.localIP().toString();
+      Serial.printf("Wi-Fi 접속: %s  IP %s\n", STA_LIST[k][0], ip.c_str());
+    } else {
+      Serial.printf("Wi-Fi(%s) 접속 실패\n", STA_LIST[k][0]);
+    }
+  }
+#endif
+  if (ip.length() == 0) {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(AP_SSID, AP_PASS);
+    ip = WiFi.softAPIP().toString();
+    Serial.printf("AP: %s / %s\n", AP_SSID, AP_PASS);
+  }
 
   // 스트림은 연결을 오래 점유하므로 페이지(80)와 별도 서버(81)로 분리
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -118,8 +145,7 @@ void setup() {
     httpd_register_uri_handler(ph, &idx);
     httpd_register_uri_handler(ph, &jszip);
   }
-  Serial.printf("대시보드: http://%s/  스트림: http://%s:81/stream\n",
-                WiFi.softAPIP().toString().c_str(), WiFi.softAPIP().toString().c_str());
+  Serial.printf("대시보드: http://%s/  스트림: http://%s:81/stream\n", ip.c_str(), ip.c_str());
 }
 
 // USB 시리얼 모드: 'C' 한 글자를 받으면 JPEG 한 장을 [AA 55 AA 55][길이 u32 LE][JPEG] 로 보낸다.

@@ -10,6 +10,12 @@ import threading
 import time
 
 
+# 마커가 멀리 있으면 640x480 에서는 몇십 픽셀밖에 안 돼 번호를 못 읽는다 → 1280x720 (이 웹캠은 MJPG 로 30fps, 마커 찾기 16ms).
+# 번호를 읽을 수 있는 최소 크기는 약 10픽셀이라, 해상도가 2배면 읽는 거리도 약 2배가 된다.
+WIDTH = int(os.environ.get("CAMERA_WIDTH", "1280"))
+HEIGHT = int(os.environ.get("CAMERA_HEIGHT", "720"))
+
+
 class Camera:
     def __init__(self) -> None:
         self.kind = "none"
@@ -33,7 +39,7 @@ class Camera:
             if not csi:
                 return
             cam = Picamera2(csi[0])
-            cam.configure(cam.create_video_configuration(main={"size": (640, 480), "format": "RGB888"}))
+            cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}))
             cam.start()
             self._picam, self.kind = cam, "picamera"
         except Exception as e:
@@ -53,8 +59,9 @@ class Camera:
                 cap.release()
                 time.sleep(0.5)
             if cap.isOpened():
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # 큰 화면을 30fps 로 받으려면 MJPG
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
                 self._cap, self.kind = cap, "usb"
                 # 웹캠은 사진을 몇 장 쌓아 두므로 read() 한 번이면 예전 화면이 나온다
                 # → 계속 읽어 최신 한 장만 들고 있는다 (돌린 직후에도 지금 화면으로 판단)
@@ -84,12 +91,16 @@ class Camera:
                 return self._latest
             return None
 
-    def jpeg(self, quality: int = 80) -> bytes | None:
-        """지금 화면을 JPEG 한 장으로. 카메라가 없으면 None."""
+    def jpeg(self, quality: int = 80, max_width: int | None = 640) -> bytes | None:
+        """지금 화면을 JPEG 한 장으로 (영상 화면용이라 기본은 가로 640 으로 줄인다. 원본 크기는 max_width=None). 카메라가 없으면 None."""
         frame = self.frame()
         if frame is None:
             return None
         import cv2
+
+        if max_width and frame.shape[1] > max_width:
+            h = round(frame.shape[0] * max_width / frame.shape[1])
+            frame = cv2.resize(frame, (max_width, h), interpolation=cv2.INTER_AREA)
 
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return buf.tobytes() if ok else None

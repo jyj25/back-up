@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field
 
 from .board import BoardReader
 from .board_cam import BoardCamera
+from .tray_check import TrayCheck
 from .camera import Camera
 from .drivers import IR_POWER, LED_COLORS, MOVES, PAN_RANGE, TILT_RANGE, make_driver
 from .navigator import Mission, NavConfig
@@ -91,6 +92,13 @@ class Robot:
         self.board = BoardReader(_setting("BOARD_PORT", "auto", fake), self._on_board_line)
         # 판정을 안 읽을 때(BOARD_PORT=none)만 보드 카메라 사진을 USB 로 받아 본다 (사진 수집용 펌웨어일 때)
         self.board_cam = None if fake or self.board.enabled else BoardCamera(os.environ.get("BOARD_CAM_PORT", "auto"))
+        self.tray = TrayCheck(self.board_cam, Path(__file__).parent.parent / "tray_empty.jpg", _CONF.get("tray")) if self.board_cam else None
+        # JUDGE=pi: 샤오는 사진만 보내고(USB) 파이가 모델을 돌려 판정한다 (보드 안 모델은 3.6초, 파이는 약 7ms)
+        self.judge = None
+        if os.environ.get("JUDGE", "").lower() == "pi" and self.board_cam:
+            from .judge import PiJudge
+            self.judge = PiJudge(self.board_cam, os.environ.get("JUDGE_MODEL", str(Path(__file__).parent.parent / "model" / "jyj25.eim")),
+                                 self._on_board_line)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_at = 0.0
         self._watchdog: asyncio.Task | None = None
@@ -100,6 +108,8 @@ class Robot:
         self._loop = asyncio.get_running_loop()
         self._watchdog = asyncio.create_task(self._watch())
         self.board.start()
+        if self.judge:
+            self.judge.start()
 
     def _on_board_line(self, line: str) -> None:
         """보드 읽기 스레드에서 불린다 → 판정 처리는 이벤트 루프로 넘긴다"""
@@ -141,6 +151,8 @@ class Robot:
         self._stop_at = time.monotonic() + duration_ms / 1000
 
     def close(self) -> None:
+        if self.judge:
+            self.judge.stop()
         self.board.stop()
         if self._watchdog:
             self._watchdog.cancel()
@@ -302,8 +314,11 @@ async def verdict(obj: dict = Body(..., examples=[{"class": "can", "conf": 0.93,
 
 @app.get("/api/sort")
 def sort_state():
+    board = robot.board.status()
+    if robot.judge is not None:  # 파이 판정: USB 보드를 읽는 게 아니므로 화면에 맞게 알려 준다
+        board = {"want": "pi", "port": "파이 판정 (샤오 사진)", "error": robot.judge.error, "last_line_at": board.get("last_line_at")}
     return {"auto": robot.sorter.auto, "min_confidence": robot.sorter.min_confidence,
-            "board": robot.board.status(), "last_verdict": robot.sorter.last_verdict}
+            "board": board, "last_verdict": robot.sorter.last_verdict, "last_decision": robot.sorter.last_decision}
 
 
 @app.post("/api/sort")
@@ -355,6 +370,73 @@ def board_camera_jpg():
 @app.get("/api/board/stream")
 def board_stream():
     return StreamingResponse(_board_cam().frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/api/judge/frame.jpg")
+def judge_frame():
+    """파이 판정이 마지막으로 본 샤오 사진 한 장"""
+    from fastapi.responses import Response
+    j = robot.judge
+    if j is None or j.last_jpeg is None:
+        raise HTTPException(status_code=503, detail="파이 판정이 아직 사진을 받지 못했습니다")
+    return Response(content=j.last_jpeg, media_type="image/jpeg")
+
+
+@app.get("/api/judge/stream")
+def judge_stream():
+    """파이 판정이 받는 샤오 사진을 영상으로 다시 보낸다. 대시보드는 샤오에 직접 붙지 말고 이 주소를 쓴다
+    (샤오가 Wi-Fi 영상을 보내면 USB 사진이 밀려 판정이 느려진다)."""
+    j = robot.judge
+    if j is None:
+        raise HTTPException(status_code=503, detail="파이 판정을 쓰지 않습니다 (JUDGE=pi, BOARD_PORT=none)")
+
+    def frames():
+        last = -1
+        while True:
+            if j.last_jpeg is not None and j.frame_seq != last:
+                last = j.frame_seq
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + j.last_jpeg + b"\r\n"
+            time.sleep(0.08)
+
+    return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/api/judge")
+def judge_status():
+    """파이 판정(JUDGE=pi) 상태: 마지막 검출과 확정 진행 (왜 확정이 안 나는지 볼 때)"""
+    j = robot.judge
+    if j is None:
+        raise HTTPException(status_code=503, detail="파이 판정을 쓰지 않습니다 (JUDGE=pi, BOARD_PORT=none)")
+    d = j.detector
+    return {"error": j.error, "frames": j.frames, "ms": j.last_ms, "dets": j.last_dets,
+            "candidate": d.cand, "streak": d.streak, "waiting_for_empty": d.waiting}
+
+
+@app.post("/api/sort/go")
+async def sort_go():
+    """READY 버튼: 샤오가 인식한 라벨(캔/페트/종이)의 통으로 보낸다. 빈 트레이면 물건을 얹어 달라는 오류."""
+    r = robot.sorter.go_now()
+    if not r["ok"]:
+        raise HTTPException(status_code=r["status"], detail=r["reason"])
+    return r
+
+
+@app.get("/api/tray")
+def tray_status():
+    """샤오 카메라로 본 트레이 (빈 트레이 기준 사진이 있어야 함)"""
+    if robot.tray is None:
+        raise HTTPException(status_code=503, detail="샤오 카메라를 쓰지 않습니다 (BOARD_PORT=none 이어야 함)")
+    return {"ready": robot.tray.ready, "look": robot.tray.look()}
+
+
+@app.post("/api/tray/baseline")
+def tray_baseline():
+    """지금 트레이를 '빈 트레이' 기준 사진으로 저장 (트레이를 비운 뒤에 부를 것)"""
+    if robot.tray is None:
+        raise HTTPException(status_code=503, detail="샤오 카메라를 쓰지 않습니다 (BOARD_PORT=none 이어야 함)")
+    if not robot.tray.set_baseline():
+        raise HTTPException(status_code=502, detail="샤오 카메라 사진을 받지 못했습니다")
+    return {"ok": True}
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

@@ -36,6 +36,13 @@ TILT_RANGE = (0, 110)  # 라즈봇 V2 의 위아래 서보는 기구 때문에 1
 DUMP_REST = int(os.environ.get("DUMP_REST", "0"))     # 평소 (트레이 수평)
 DUMP_ANGLE = int(os.environ.get("DUMP_ANGLE", "90"))  # 쏟을 때: 반시계로 90° (OLED 반대쪽)
 DUMP_HOLD_S = 1.5
+PAN_DPS = float(os.environ.get("PAN_DPS", "60"))  # 카메라 좌우 도는 속도 (도/초)
+PAN_FRONT = int(os.environ.get("CAMERA_FRONT_PAN", "90"))  # 카메라가 몸체 정면을 볼 때의 실제 서보 각도 (카메라가 틀어져 달려 있으면 90 이 아니다)
+
+
+def physical_pan(logical: int) -> int:
+    """코드의 pan(90 = 몸체 정면, 클수록 왼쪽)을 서보에 보낼 실제 각도로 바꾼다. 서보 범위 0~180 안으로 자른다."""
+    return max(0, min(180, int(logical) + PAN_FRONT - 90))
 DUMP_SWEEP_S = float(os.environ.get("DUMP_SWEEP_MS", "1000")) / 1000  # 90° 도는 시간 (0.3초도 빨라서 물건이 튐 → 1초)
 IR_POWER = 0
 IR_RELEASE = 255
@@ -96,9 +103,9 @@ class FakeDriver:
         self.state.led = color
         self._log(f"led {color}")
 
-    def dump(self) -> None:
-        """실은 물건 쏟기"""
-        self._log("dump")
+    def dump(self, speed: float = 1.0) -> None:
+        """실은 물건 쏟기 (speed 2.0 = 서보를 2배 빠르게)"""
+        self._log("dump" if speed == 1.0 else f"dump x{speed:g}")
 
     def remote_key(self) -> int | None:
         """리모컨 버튼이 새로 눌렸으면 그 코드, 아니면 None"""
@@ -122,7 +129,7 @@ class RealDriver(FakeDriver):
         self._bot = Robot()
         self._lock = threading.Lock()  # I2C 는 한 번에 한 명령씩
         self._bot.motors.stop()
-        self._bot.servos.pan.set_angle(90)
+        self._bot.servos.pan.set_angle(physical_pan(90))
         self._bot.servos.tilt.set_angle(DUMP_REST)  # S2 = 쏟기 서보 → 켜질 때 트레이 수평
         self._bot.ultrasonic.enable()
         self._bot.ir.enable()
@@ -138,10 +145,21 @@ class RealDriver(FakeDriver):
             self._bot.motors.stop()
         super().stop()
 
+    def _pan_to(self, target: int) -> None:
+        """카메라 좌우 서보를 한 번에 보내지 않고 조금씩 돌려 속도를 늦춘다 (PAN_DPS 도/초)"""
+        cur = getattr(self.state, "pan", 90)
+        cur = 90 if cur is None else cur
+        step = 2
+        n = max(1, abs(target - cur) // step)
+        for i in range(1, n + 1):
+            self._bot.servos.pan.set_angle(physical_pan(round(cur + (target - cur) * i / n)))
+            time.sleep(step / PAN_DPS)
+        self._bot.servos.pan.set_angle(physical_pan(target))
+
     def set_servo(self, pan: int | None, tilt: int | None) -> None:
         with self._lock:
             if pan is not None:
-                self._bot.servos.pan.set_angle(pan)
+                self._pan_to(pan)
             if tilt is not None:
                 self._bot.servos.tilt.set_angle(tilt)
         super().set_servo(pan, tilt)
@@ -182,23 +200,23 @@ class RealDriver(FakeDriver):
                 self._bot.leds.set_all(getattr(self._LedColor, color.upper()))
         super().set_led(color)
 
-    def _sweep(self, start: int, end: int, step: int = 3) -> None:
+    def _sweep(self, start: int, end: int, step: int = 3, speed: float = 1.0) -> None:
         """쏟기 서보를 한 번에 보내지 않고 조금씩 돌려 속도를 늦춘다"""
         n = max(1, abs(end - start) // step)
         for i in range(1, n + 1):
             with self._lock:
                 self._bot.servos.tilt.set_angle(round(start + (end - start) * i / n))
-            time.sleep(DUMP_SWEEP_S * step / 90)
+            time.sleep(DUMP_SWEEP_S * step / 90 / speed)
 
-    def dump(self) -> None:
-        # 노란 LED → 쏟기 서보로 트레이를 기울였다가 원위치
+    def dump(self, speed: float = 1.0) -> None:
+        # 노란 LED → 쏟기 서보로 트레이를 기울였다가 원위치 (speed 2.0 = 2배속)
         self.set_led("yellow")  # 부저는 소리 크기를 못 줄이고 너무 커서 쏟을 때는 노란 불만
-        self._sweep(DUMP_REST, DUMP_ANGLE)
+        self._sweep(DUMP_REST, DUMP_ANGLE, speed=speed)
         time.sleep(DUMP_HOLD_S)
-        self._sweep(DUMP_ANGLE, DUMP_REST)
+        self._sweep(DUMP_ANGLE, DUMP_REST, speed=speed)
         time.sleep(0.3)
         self.set_led(None)
-        super().dump()
+        super().dump(speed)
 
     def close(self) -> None:
         try:

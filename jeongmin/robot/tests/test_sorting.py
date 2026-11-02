@@ -27,7 +27,7 @@ def test_verdict_rules_and_manual_override_is_recorded():
         assert v({"class": "can", "conf": 0.95})["reason"] == "자동 출발 꺼짐"   # 기본은 꺼짐
         assert c.post("/api/sort", json={"auto": True}).json()["auto"] is True
         assert v({"class": None, "conf": 0.4})["reason"] == "판정 없음"
-        assert v({"class": "empty", "conf": 0.99})["reason"] == "빈 트레이"
+        assert v({"class": "empty", "conf": 0.99})["reason"] == "트레이가 비었습니다. 물건을 얹어 주세요"
         assert v({"class": "glass", "conf": 0.99})["reason"].startswith("모르는 종류")
         assert v({"class": "home", "conf": 0.99})["reason"].startswith("모르는 종류")
         assert v({"class": "can", "conf": 0.5})["reason"].startswith("확신도 낮음")

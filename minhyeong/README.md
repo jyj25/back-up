@@ -13,6 +13,20 @@ minhyeong/
     └── start-dashboard.bat  더블클릭 실행 (로봇 IP 입력 → 서버 켜고 브라우저 열기)
 ```
 
+## 발표 슬라이드 (`slides/`)
+
+`slides/index.html` 한 장짜리 웹 슬라이드 (11장, 대시보드와 같은 디자인, 장마다 발표 대본). 대본만 읽으려면 [`slides/대본.md`](slides/대본.md) (index.html 에서 뽑은 것).
+`minhyeong/` 폴더에서 `python -m http.server 8770` → `http://localhost:8770/slides/` (6번 장이 `../dashboard/` 를 미리보기로 불러오므로 `minhyeong/` 폴더째 띄운다).
+
+| 키 | 기능 |
+| --- | --- |
+| ← → / 스페이스 | 넘기기 |
+| **S** | **발표자 창** (지금·다음 장, 대본, 타이머) — 노트북 화면에 띄우고 빔에는 원래 창 |
+| F | 전체 화면 |
+| N / O | 대본 아래에 보기 / 전체 장 한눈에 |
+
+시연 영상은 `slides/video/demo.mp4` 로 넣으면 8번 장에서 재생된다 (아직 없음).
+
 ## 바로 시작 (처음 쓰는 사람용)
 
 준비물: **Windows 노트북 + Python** (없으면 https://www.python.org 에서 설치, 설치 화면에서 "Add python.exe to PATH" 체크)

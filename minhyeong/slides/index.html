@@ -212,7 +212,7 @@
   <!-- 8. 시연 영상 -->
   <section class="slide" data-title="시연 영상">
     <p class="kicker">04 · 시연 영상</p>
-    <h2 class="h2">처음부터 끝까지, <span class="accent">한 번에</span></h2>
+    <h2 class="h2">마커를 보고, <span class="accent">통까지 찾아간다</span></h2>
     <div class="frame mt-m" style="flex:1;min-height:0;max-height:68vh;aspect-ratio:16/9;align-self:center;width:auto">
       <div class="ph"><span><iconify-icon icon="solar:videocamera-record-linear" style="font-size:3em"></iconify-icon><br>시연 영상 자리<br><span class="small">video/demo.mp4 를 넣으면 여기서 재생됩니다</span></span></div>
       <video src="video/demo.mp4" controls preload="metadata" playsinline style="position:relative" onerror="this.remove()" onloadedmetadata="this.previousElementSibling.remove()"></video>
@@ -221,7 +221,7 @@
     <aside class="notes">
       <p>먼저 녹화해 둔 시연 영상을 보여 드리겠습니다. 라이브 시연이 실패할 수도 있어서 미리 찍어 두었습니다.</p>
       <p><em>(영상 재생 · 16초, 영상 파일은 minhyeong/slides/video/demo.mp4)</em></p>
-      <p>보시는 것처럼 트레이에 물건을 올리면 판정 후 해당 통으로 가서 쏟고, 출발점으로 돌아오며, 대시보드에 기록이 쌓입니다.</p>
+      <p>보시는 것처럼 로봇이 바닥에 놓인 통 마커를 카메라로 보고, 조금 가고 멈춰서 보며 맞는 통까지 찾아갑니다. 마커는 출발점, 캔, 페트, 종이 순서로 놓여 있습니다.</p>
     </aside>
   </section>
 
@@ -294,7 +294,7 @@
     <p class="kicker">06 · 한계 · 개선 방향 (선생님 제안)</p>
     <h2 class="h2">지도 대신, <span class="accent">통을 한 줄로 세운다</span></h2>
     <div class="flow mt-m" style="grid-template-columns:repeat(4,1fr)">
-      <div class="step"><p class="n">START</p><p class="t">출발</p><p class="small">한 방향으로만 이동</p></div>
+      <div class="step"><p class="n">#1</p><p class="t">출발점</p><p class="small">한 방향으로만 이동</p></div>
       <div class="step hot"><p class="n">#2</p><p class="t">캔 통</p><p class="small">마커가 로봇 쪽을 보게</p></div>
       <div class="step"><p class="n">#3</p><p class="t">페트 통</p><p class="small">같은 높이로</p></div>
       <div class="step"><p class="n">#4</p><p class="t">종이 통</p><p class="small">차례로 확인</p></div>

@@ -17,7 +17,7 @@ minhyeong/
 
 `slides/index.html` 한 장짜리 웹 슬라이드 (12장, 대시보드와 같은 디자인, 장마다 발표 대본). 대본만 읽으려면 [`slides/대본.md`](slides/대본.md) (index.html 에서 뽑은 것).
 
-**배포 주소: https://sortbot-slides.vercel.app** (누구나 볼 수 있음. 9번 라이브의 "대시보드 열기" 는 발표 노트북에서만 동작)
+**배포 주소: https://sortbot-slides.vercel.app** (누구나 볼 수 있음)
 `minhyeong/` 폴더에서 `python -m http.server 8770` → `http://localhost:8770/slides/` (6번 장이 `../dashboard/` 를 미리보기로 불러오므로 `minhyeong/` 폴더째 띄운다).
 
 | 키 | 기능 |
@@ -27,7 +27,7 @@ minhyeong/
 | F | 전체 화면 |
 | N / O | 대본 아래에 보기 / 전체 장 한눈에 |
 
-영상: 8번 시연 영상 `slides/video/demo.mp4`, 9번 대시보드 영상 `slides/video/dashboard.mp4`. 12번(마지막)이 라이브 시연 (대시보드 열기 버튼). 발표는 팀장(이정민).
+영상: 8번 시연 영상 `slides/video/demo.mp4`, 9번 대시보드 영상 `slides/video/dashboard.mp4`. 12번(마지막)이 라이브 시연. 발표는 팀장(이정민).
 
 ## 바로 시작 (처음 쓰는 사람용)
 

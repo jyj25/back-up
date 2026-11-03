@@ -219,15 +219,46 @@
     </div>
     <div class="deck-footer"><span class="brand">SORTBOT</span><span class="slide-number"></span></div>
     <aside class="notes">
-      <p>먼저 녹화해 둔 시연 영상을 보여 드리겠습니다.</p>
-      <p><em>(영상 재생 · 약 2분. 영상 파일은 minhyeong/slides/video/demo.mp4 — 아직 안 넣음)</em></p>
+      <p>먼저 녹화해 둔 시연 영상을 보여 드리겠습니다. 라이브 시연이 실패할 수도 있어서 미리 찍어 두었습니다.</p>
+      <p><em>(영상 재생 · 16초, 영상 파일은 minhyeong/slides/video/demo.mp4)</em></p>
       <p>보시는 것처럼 트레이에 물건을 올리면 판정 후 해당 통으로 가서 쏟고, 출발점으로 돌아오며, 대시보드에 기록이 쌓입니다.</p>
     </aside>
   </section>
 
-  <!-- 9. 한계 ① 통합 시험 결과와 원인 -->
+  <!-- 9. 라이브 시연 -->
+  <section class="slide" data-title="라이브 시연">
+    <p class="kicker">05 · 라이브 시연</p>
+    <div class="grid mt-m" style="grid-template-columns:1.2fr 1fr;gap:clamp(16px,2.4vw,48px);align-items:center">
+      <div>
+        <p class="wide" style="font-size:clamp(64px,10vw,200px);margin:0;color:var(--accent-hi)">LIVE</p>
+        <p class="h3" style="margin:.4em 0 1em">지금 여기서 직접 해 보겠습니다</p>
+        <a class="btn" href="http://localhost:8765/" target="_blank" rel="noopener"><iconify-icon icon="solar:monitor-linear"></iconify-icon>대시보드 열기</a>
+        <p class="small mt-m">발표 노트북에서 대시보드를 켜 둔 상태여야 열립니다 (start-dashboard.bat).</p>
+      </div>
+      <div class="panel">
+        <p class="small" style="margin:0 0 .4em">순서</p>
+        <ul class="dots">
+          <li>대시보드 오른쪽 위 <b>“실제 로봇”</b> 확인</li>
+          <li>제어 → 관리자 → <b>AI 자동 출발 켜기</b></li>
+          <li>트레이에 <b>캔</b> 올리기 → ① 판정 → 로봇 출발</li>
+          <li>② 마커 박스 → 쏟기 → 복귀 → <b>통 개수 +1</b></li>
+          <li>판정이 안 되면 <b>제어 → 통으로 보내기</b></li>
+          <li>위험하면 <b>정지</b> 또는 <b>리모컨 전원 버튼</b></li>
+        </ul>
+      </div>
+    </div>
+    <div class="deck-footer"><span class="brand">SORTBOT</span><span class="slide-number"></span></div>
+    <aside class="notes">
+      <p>이제 라이브로 직접 보여 드리겠습니다. <em>(대시보드 열기 → 화면 전환)</em></p>
+      <p>오른쪽 위에 실제 로봇이라고 나오는 걸 확인하고, 관리자 모드에서 AI 자동 출발을 켜겠습니다. 이제 트레이에 캔을 올리면, 왼쪽 ESP32 판정 화면에서 확정이 되고 로봇이 출발합니다. 오른쪽 로봇 카메라에 캔 통 마커 박스가 뜨고, 쏟은 뒤 돌아오면 캔 통 개수가 하나 올라갑니다.</p>
+      <p><em>(판정이 안 나오면)</em> 지금처럼 판정이 잘 안 될 때를 대비해 웹에서 직접 보낼 수 있습니다. 제어 메뉴에서 캔 통으로 보내기를 1초 누르겠습니다.</p>
+      <p><em>(위험하면 즉시 정지 버튼, 웹이 안 되면 리모컨 전원 버튼. 3분 넘기지 않기)</em></p>
+    </aside>
+  </section>
+
+  <!-- 10. 한계 ① 통합 시험 결과와 원인 -->
   <section class="slide" data-title="한계 · 통합 시험">
-    <p class="kicker">05 · 한계 · 11/1 부산 통합 시험</p>
+    <p class="kicker">06 · 한계 · 11/1 부산 통합 시험</p>
     <h2 class="h2">찾기는 하는데, <span class="accent">한 번에 못 간다</span></h2>
     <div class="grid mt-m" style="grid-template-columns:1fr 1fr;gap:clamp(16px,2vw,40px);align-items:start">
       <div class="panel">
@@ -258,9 +289,9 @@
     </aside>
   </section>
 
-  <!-- 10. 한계 ② 개선 방향과 그 밖의 한계 -->
+  <!-- 11. 한계 ② 개선 방향과 그 밖의 한계 -->
   <section class="slide" data-title="한계 · 개선">
-    <p class="kicker">05 · 한계 · 개선 방향 (선생님 제안)</p>
+    <p class="kicker">06 · 한계 · 개선 방향 (선생님 제안)</p>
     <h2 class="h2">지도 대신, <span class="accent">통을 한 줄로 세운다</span></h2>
     <div class="flow mt-m" style="grid-template-columns:repeat(4,1fr)">
       <div class="step"><p class="n">START</p><p class="t">출발</p><p class="small">한 방향으로만 이동</p></div>
@@ -291,7 +322,7 @@
     </aside>
   </section>
 
-  <!-- 11. 마무리 -->
+  <!-- 12. 마무리 -->
   <section class="slide" data-title="감사합니다">
     <p class="kicker">Thank you</p>
     <h2 class="h2">버리기만 하면, 로봇이 알아서 나눈다</h2>

@@ -93,26 +93,18 @@
           <li><b>확정 규칙</b>: 1등 확률 80% 이상 · 1·2등 차이 20% 이상 · <b>같은 결과 3번 연속</b>일 때만 한 번 보낸다</li>
           <li>보낸 뒤에는 트레이가 빌 때까지 기다린다 (같은 물건 두 번 방지)</li>
         </ul>
-        <div class="code mt-m">{"class":"can","conf":0.93,"ms":173,"n":1}   ← 확정
-{"class":null,"conf":0.00,"ms":168,"n":0}   ← 그 밖의 프레임</div>
       </div>
-      <div class="panel">
-        <p class="small" style="margin:0 0 .8em">정확도의 흐름 (학습에 안 쓴 테스트 사진 기준)</p>
-        <div class="bars">
-          <div class="b"><span>이미지 분류 · 마지막</span><span class="track"><i style="width:19%"></i></span><span class="v">19/99</span></div>
-          <div class="b hot"><span>물체 검출로 전환</span><span class="track"><i style="width:57.6%"></i></span><span class="v">57/99</span></div>
-          <div class="b hot"><span>사진 추가 · 재학습</span><span class="track"><i style="width:51%"></i></span><span class="v">51/100</span></div>
-          <div class="b goal"><span>목표</span><span class="track"><i style="width:90%"></i></span><span class="v">90%</span></div>
-        </div>
-        <p class="small mt-m" style="margin-bottom:0">분류 모델이 물체 대신 <b style="color:var(--text-1)">바닥·조명을 외우는</b> 것으로 보여, 물체 위치만 배우는 검출 모델로 바꿨다 → 19 → 49~57.</p>
+      <div>
+        <p class="small" style="margin:0 0 .6em">보드가 로봇에게 보내는 한 줄 (USB)</p>
+        <div class="code">{"class":"can","conf":0.93,"ms":173,"n":1}   ← 확정
+{"class":null,"conf":0.00,"ms":168,"n":0}   ← 그 밖의 프레임</div>
       </div>
     </div>
     <div class="deck-footer"><span class="brand">SORTBOT</span><span class="slide-number"></span></div>
     <aside class="notes">
       <p>AI 부분입니다. ESP32S3 보드의 카메라가 찍은 사진을 <strong>보드 안에서</strong> 바로 판단합니다. 사진이 보드 밖으로 나가지 않아서 인터넷이 필요 없고 빠릅니다. 이걸 엣지 AI라고 합니다.</p>
       <p>모델은 사진을 96×96으로 줄인 뒤 <strong>물체 검출, FOMO</strong>로 물체의 위치와 종류를 찾습니다. 캔, 페트, 종이, 그리고 빈 트레이를 구분하고, 판정 이름이 그대로 로봇의 통 이름이 됩니다.</p>
-      <p>손이 지나가거나 흔들릴 때 잘못 출발하지 않도록 <strong>확정 규칙</strong>을 뒀습니다. 1등 확률 80% 이상, 2등과 20% 이상 차이, 그리고 같은 결과가 3번 연속 나올 때만 한 번 보냅니다.</p>
-      <p>정확도는 솔직히 아직 부족합니다. 처음 이미지 분류 모델은 테스트 사진 99장 중 19장만 맞혔는데, 바닥과 조명을 외우는 걸로 보여서 물체 검출로 바꾸니 49~57장으로 올랐습니다. 목표 90%와의 차이는 마지막 한계에서 다시 말씀드리겠습니다. <em>(1분 30초 · 유정님께 최신 숫자 확인)</em></p>
+      <p>손이 지나가거나 흔들릴 때 잘못 출발하지 않도록 <strong>확정 규칙</strong>을 뒀습니다. 1등 확률 80% 이상, 2등과 20% 이상 차이, 그리고 같은 결과가 3번 연속 나올 때만 한 번 보냅니다. <em>(1분)</em></p>
     </aside>
   </section>
 
@@ -308,7 +300,7 @@
         </ul>
       </div>
       <div class="grid" style="gap:10px">
-        <div class="panel" style="padding:.8em 1em"><p class="h3" style="margin:0;font-size:clamp(15px,1.2vw,23px)">AI: 테스트 사진 정확도 약 50%</p><p class="small" style="margin:.2em 0 0">실물에서는 잘 되는 편이나 목표 90%에 못 미침 → 서로 다른 물체를 늘려 재학습</p></div>
+        <div class="panel" style="padding:.8em 1em"><p class="h3" style="margin:0;font-size:clamp(15px,1.2vw,23px)">AI: 처음 보는 물건에는 아직 약함</p><p class="small" style="margin:.2em 0 0">실물 인식은 잘 되는 편 → 서로 다른 물체 사진을 늘려 재학습</p></div>
         <div class="panel" style="padding:.8em 1em"><p class="h3" style="margin:0;font-size:clamp(15px,1.2vw,23px)">웹: 로그인 없음, 원격 정지의 한계</p><p class="small" style="margin:.2em 0 0">연결이 끊기면 웹 정지가 안 감 → 비상 정지는 리모컨·본체 버튼</p></div>
       </div>
     </div>
@@ -316,7 +308,7 @@
     <aside class="notes">
       <p>그래서 선생님께서 방법을 제안해 주셨습니다. 한마디로 <strong>지도를 만들어 돌아다니는 방식은 포기하고, 통을 한 줄로 세워 차례로 확인</strong>하는 것입니다.</p>
       <p>통들을 일렬로 놓고 마커가 카메라 정면에 잘 보이게 세워 둡니다. 로봇은 한 방향으로만 가면서 마커를 하나씩 읽고, 버릴 종류와 맞으면 멈춰서 90도 돌아 쏟고, 아니면 다음 통으로 넘어갑니다. 한 바퀴 돌기, 방향 짐작, 헤매기가 전부 없어지고, 마커가 늘 가까이 정면에 보여 인식 문제도 줄어듭니다. 지금 코드의 "다가가서 확인하고 90도 돌아 쏟기"를 그대로 쓸 수 있어 바꿀 양도 많지 않습니다.</p>
-      <p>그 밖의 한계로, AI는 실물에서는 잘 되는 편이지만 테스트 사진 기준 정확도가 50% 정도라 목표 90%에 못 미칩니다. 웹은 로그인이 없고, 연결이 끊기면 웹 정지가 가지 않아 비상 정지는 리모컨과 본체 버튼을 기본으로 했습니다. <em>(1분 10초)</em></p>
+      <p>그 밖의 한계로, AI는 실물 인식은 잘 되는 편이지만 처음 보는 물건에는 아직 약해서, 서로 다른 물체 사진을 늘려 다시 학습할 계획입니다. 웹은 로그인이 없고, 연결이 끊기면 웹 정지가 가지 않아 비상 정지는 리모컨과 본체 버튼을 기본으로 했습니다. <em>(1분 10초)</em></p>
     </aside>
   </section>
 
